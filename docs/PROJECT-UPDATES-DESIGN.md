@@ -524,15 +524,23 @@ Check Settings → Quick PARA → Project Updates to configure."
 
 ## Future Enhancements
 
-1. **Email Integration**: Send reports via email
-2. **Slack/Discord**: Post to team channels
-3. **Custom Templates**: User-defined report formats
-4. **AI Summaries**: GPT-generated summaries
-5. **Metrics Tracking**: Charts and graphs
-6. **Export Options**: PDF, Markdown, HTML
-7. **Team Collaboration**: Share configs across team
+1. **Google Docs Sync Integration**:
+   - **Goal**: Make Google Doc and Obsidian note effectively a single document
+   - **Status**: Google Docs Sync plugin in design phase (see `custom-extensions/plugins/google-docs-sync/`)
+   - **Impact on Project Updates**: May need to adjust report output format to optimize for collaborative editing
+   - **Use Case**: Supervisor can add feedback directly in Google Doc during 1-on-1, changes sync back to Obsidian automatically
+   - **Note**: Previous `integrate-meeting-notes.py` script abandoned due to format complexity - plugin approach is preferred
+
+2. **Email Integration**: Send reports via email
+3. **Slack/Discord**: Post to team channels
+4. **Custom Templates**: User-defined report formats
+5. **AI Summaries**: GPT-generated summaries
+6. **Metrics Tracking**: Charts and graphs
+7. **Export Options**: PDF, Markdown, HTML
+8. **Team Collaboration**: Share configs across team
 
 ---
 
-**Status**: Design Phase
-**Next Step**: Begin Phase 1 implementation
+**Status**: Implementation in progress
+**Current**: Completed tasks now integrated under project notes (Nov 2025)
+**Next Step**: Continue testing new format, monitor Google Docs Sync plugin development
