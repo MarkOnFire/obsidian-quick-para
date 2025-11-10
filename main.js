@@ -8,25 +8,22 @@ const DEFAULT_SETTINGS = {
     firstRun: true,
     paraFolders: {
         inbox: "0 - INBOX",
-        projects: "1 - Projects",
+        projects: "1 - PROJECTS",
         areas: "2 - AREAS",
         resources: "3 - RESOURCES",
         archive: "4 - ARCHIVE"
     },
-    agendaGeneration: {
-        enabled: true,
+    projectUpdates: {
+        enabled: false,  // Disabled by default
         kanbanFile: "0 - INBOX/Project Dashboard.md",
-        agendaFile: "0 - INBOX/Weekly 1 on 1.md",
-        pbswiFolder: "1 - Projects/PBSWI"
+        configs: []      // User configures specific project folders
     },
     templates: {
-        autoDeployOnSetup: true,
-        backupBeforeOverwrite: true
+        autoDeployOnSetup: true
     },
     tagging: {
-        propertyName: "para",
-        persistSubfolderTags: true,
-        migrateOldTags: false
+        propertyName: "para",  // Locked - not user-configurable
+        persistSubfolderTags: true
     }
 };
 
@@ -47,16 +44,15 @@ class DependencyManager {
                 name: 'Tasks',
                 description: 'Required for task management',
                 url: 'https://github.com/obsidian-tasks-group/obsidian-tasks'
-            }
-        };
-
-        this.optionalPlugins = {
+            },
             'obsidian-kanban': {
                 name: 'Kanban',
-                description: 'Recommended for Project Dashboard',
+                description: 'Required for Project Dashboard and project updates',
                 url: 'https://github.com/mgmeyers/obsidian-kanban'
             }
         };
+
+        this.optionalPlugins = {};
     }
 
     async checkDependencies() {
@@ -155,6 +151,191 @@ class DependencyWarningModal extends Modal {
         const buttonContainer = contentEl.createEl('div', { cls: 'modal-button-container' });
         const closeButton = buttonContainer.createEl('button', { text: 'Close' });
         closeButton.addEventListener('click', () => this.close());
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// ============================================================================
+// PROJECT UPDATE CONFIGURATION MODAL
+// ============================================================================
+
+class ProjectUpdateConfigModal extends Modal {
+    constructor(app, plugin, existingConfig = null, onSave) {
+        super(app);
+        this.plugin = plugin;
+        this.existingConfig = existingConfig;
+        this.onSave = onSave;
+
+        // Initialize with existing config or defaults
+        this.config = existingConfig ? { ...existingConfig } : {
+            name: '',
+            projectFolder: '',
+            schedule: 'weekly',
+            dayOfWeek: 'Monday',
+            timeOfDay: '09:00',
+            enabled: true
+        };
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl('h2', {
+            text: this.existingConfig ? 'Edit Project Update' : 'Add Project Update'
+        });
+
+        contentEl.createEl('p', {
+            text: 'Configure automatic status report generation for a project folder. Reports will be created in your Inbox with the format "UPDATE — [Project Name].md".',
+            cls: 'setting-item-description'
+        });
+
+        // Project Name
+        new Setting(contentEl)
+            .setName('Project Name')
+            .setDesc('Display name for this project update (e.g., "PBSWI", "Personal Projects")')
+            .addText(text => text
+                .setPlaceholder('Project Name')
+                .setValue(this.config.name)
+                .onChange(value => {
+                    this.config.name = value.trim();
+                }));
+
+        // Project Folder
+        const folderSetting = new Setting(contentEl)
+            .setName('Project Folder Path')
+            .setDesc('Path to the project folder to track (e.g., "1 - PROJECTS/PBSWI")');
+
+        // Create text input with folder suggestions
+        const folderInput = folderSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '1 - PROJECTS/Subfolder',
+            value: this.config.projectFolder
+        });
+        folderInput.addClass('folder-suggest-input');
+        folderInput.style.width = '100%';
+
+        // Get all folders in vault
+        const folders = this.app.vault.getAllLoadedFiles()
+            .filter(f => f.children !== undefined)
+            .map(f => f.path)
+            .sort();
+
+        // Add datalist for autocomplete
+        const datalistId = 'folder-suggest-' + Math.random().toString(36).substr(2, 9);
+        const datalist = contentEl.createEl('datalist', { attr: { id: datalistId } });
+        folders.forEach(folder => {
+            datalist.createEl('option', { value: folder });
+        });
+        folderInput.setAttribute('list', datalistId);
+
+        // Update config on change
+        folderInput.addEventListener('input', (e) => {
+            this.config.projectFolder = e.target.value.trim();
+        });
+
+        // Schedule Frequency
+        new Setting(contentEl)
+            .setName('Update Frequency')
+            .setDesc('How often to generate project updates')
+            .addDropdown(dropdown => dropdown
+                .addOption('daily', 'Daily')
+                .addOption('weekly', 'Weekly')
+                .addOption('monthly', 'Monthly')
+                .setValue(this.config.schedule)
+                .onChange(value => {
+                    this.config.schedule = value;
+                }));
+
+        // Day of Week (only for weekly)
+        const dayOfWeekSetting = new Setting(contentEl)
+            .setName('Day of Week')
+            .setDesc('Which day to generate the weekly update')
+            .addDropdown(dropdown => dropdown
+                .addOption('Monday', 'Monday')
+                .addOption('Tuesday', 'Tuesday')
+                .addOption('Wednesday', 'Wednesday')
+                .addOption('Thursday', 'Thursday')
+                .addOption('Friday', 'Friday')
+                .addOption('Saturday', 'Saturday')
+                .addOption('Sunday', 'Sunday')
+                .setValue(this.config.dayOfWeek || 'Monday')
+                .onChange(value => {
+                    this.config.dayOfWeek = value;
+                }));
+
+        // Show/hide day of week based on schedule
+        dayOfWeekSetting.settingEl.style.display = this.config.schedule === 'weekly' ? '' : 'none';
+
+        // Time of Day
+        new Setting(contentEl)
+            .setName('Time of Day')
+            .setDesc('What time to generate the update (24-hour format)')
+            .addText(text => text
+                .setPlaceholder('09:00')
+                .setValue(this.config.timeOfDay || '09:00')
+                .onChange(value => {
+                    this.config.timeOfDay = value.trim();
+                })
+                .inputEl.setAttribute('type', 'time'));
+
+        // Enable/Disable
+        new Setting(contentEl)
+            .setName('Enabled')
+            .setDesc('Turn this project update on or off')
+            .addToggle(toggle => toggle
+                .setValue(this.config.enabled)
+                .onChange(value => {
+                    this.config.enabled = value;
+                }));
+
+        // Buttons
+        const buttonContainer = contentEl.createEl('div', { cls: 'modal-button-container' });
+
+        const saveButton = buttonContainer.createEl('button', {
+            text: 'Save',
+            cls: 'mod-cta'
+        });
+        saveButton.addEventListener('click', () => {
+            if (this.validateConfig()) {
+                this.onSave(this.config);
+                this.close();
+            }
+        });
+
+        const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
+        cancelButton.addEventListener('click', () => this.close());
+    }
+
+    validateConfig() {
+        if (!this.config.name) {
+            new Notice('Please enter a project name');
+            return false;
+        }
+
+        if (!this.config.projectFolder) {
+            new Notice('Please enter a project folder path');
+            return false;
+        }
+
+        // Check if folder exists
+        const folder = this.app.vault.getAbstractFileByPath(this.config.projectFolder);
+        if (!folder) {
+            new Notice(`Folder not found: ${this.config.projectFolder}. Please create it first or check the path.`, 5000);
+            return false;
+        }
+
+        // Validate time format
+        if (this.config.timeOfDay && !/^\d{2}:\d{2}$/.test(this.config.timeOfDay)) {
+            new Notice('Please enter a valid time in HH:MM format (e.g., 09:00)');
+            return false;
+        }
+
+        return true;
     }
 
     onClose() {
@@ -630,20 +811,29 @@ tags:
 created: <% tp.file.creation_date() %>
 ---
 
-# <% tp.file.title %>
-
-## Notes in this note
+## 🗒 Tasks in this note
 \`\`\`tasks
 path includes {{query.file.path}}
 not done
 sort by due
 sort by priority
 
+
 \`\`\`
 
 ---
+## Resources
+*Add links to frequent reference or working documents*
 
+
+
+
+---
 ## Notes
+*To do items will all be collected at the top of the note.*
+- [ ] Start notes
+- [ ]
+
 
 `,
             'inbox-template.md': `---
@@ -652,49 +842,57 @@ tags:
 created: <% tp.file.creation_date() %>
 ---
 
-# <% tp.file.title %>
-
-## Quick Capture
-
-## Tasks in this note
+## 🗒 Tasks in this note
 \`\`\`tasks
 path includes {{query.file.path}}
 not done
 sort by due
 sort by priority
 
+
 \`\`\`
 
 ---
+## Resources
+*Add links to frequent reference or working documents*
 
-## Processing Notes
-*Move to appropriate PARA folder when processed*
 
+
+
+---
+## Notes
+*To do items will all be collected at the top of the note.*
+- [ ] Start notes
+- [ ]
 `,
             'projects-template.md': `---
 tags:
   - all
 created: <% tp.file.creation_date() %>
-status: active
 ---
 
-# <% tp.file.title %>
-
-## Project Goal
-
-## Tasks
+## 🗒 Tasks in this note
 \`\`\`tasks
 path includes {{query.file.path}}
 not done
 sort by due
 sort by priority
 
+
 \`\`\`
 
 ---
+## Resources
+*Add links to frequent reference or working documents*
 
+
+
+
+---
 ## Notes
-
+*To do items will all be collected at the top of the note.*
+- [ ] Start notes
+- [ ]
 `,
             'areas-template.md': `---
 tags:
@@ -702,23 +900,28 @@ tags:
 created: <% tp.file.creation_date() %>
 ---
 
-# <% tp.file.title %>
-
-## Area Overview
-
-## Active Tasks
+## 🗒 Tasks in this note
 \`\`\`tasks
 path includes {{query.file.path}}
 not done
 sort by due
 sort by priority
 
+
 \`\`\`
 
 ---
+## Resources
+*Add links to frequent reference or working documents*
 
-## Check-ins
 
+
+
+---
+## Notes
+*To do items will all be collected at the top of the note.*
+- [ ] Start notes
+- [ ]
 `,
             'resources-template.md': `---
 tags:
@@ -726,14 +929,28 @@ tags:
 created: <% tp.file.creation_date() %>
 ---
 
-# <% tp.file.title %>
+## 🗒 Tasks in this note
+\`\`\`tasks
+path includes {{query.file.path}}
+not done
+sort by due
+sort by priority
 
-## Resource Information
+
+\`\`\`
 
 ---
+## Resources
+*Add links to frequent reference or working documents*
 
+
+
+
+---
 ## Notes
-
+*To do items will all be collected at the top of the note.*
+- [ ] Start notes
+- [ ]
 `,
             'archive-template.md': `---
 tags:
@@ -742,14 +959,269 @@ created: <% tp.file.creation_date() %>
 archived: <% tp.file.creation_date() %>
 ---
 
-# <% tp.file.title %>
+## 🗒 Tasks in this note
+\`\`\`tasks
+path includes {{query.file.path}}
+not done
+sort by due
+sort by priority
 
-## Archive Reason
+
+\`\`\`
+
+---
+## Resources
+*Add links to frequent reference or working documents*
+
+
+
+
+---
+## Notes
+*To do items will all be collected at the top of the note.*
+- [ ] Start notes
+- [ ]
+
+`,
+            'Project Dashboard.md': `---
+kanban-plugin: board
+tags:
+  - all
+created: <% tp.file.creation_date() %>
+---
+
+## INBOX
+
+
+
+## BACKBURNER
+
+
+
+## NEXT WEEK
+
+
+
+## THIS WEEK
+
+
+
+## Blocked
+
+
+
+## TOMORROW
+
+
+
+## TODAY
+
+- [ ] ### [[Daily and Weekly Tasks]] — do these TODAY!
+
+\`\`\`tasks
+path includes Daily and Weekly Tasks
+not done
+(due today) OR (due before tomorrow)
+hide recurrence rule
+hide edit button
+sort by description
+\`\`\`
+
+
+## Doing
+
+
+
+## Done
+
+**Complete**
+
+`,
+            'PARA Method Overview.md': `---
+tags:
+  - all
+  - para-methodology
+created: <% tp.file.creation_date() %>
+para: resources
+---
+
+# PARA Method Overview
+
+Welcome to your PARA-organized vault! This note explains the PARA method and how the Quick PARA plugin implements it.
+
+## What is PARA?
+
+PARA is an organizational system created by Tiago Forte that divides all information into four categories based on **actionability** and **time horizon**.
+
+### The Four Categories
+
+#### 📥 **Projects** (\`1 - PROJECTS\`)
+**Definition**: Short-term efforts with a specific goal and deadline.
+
+**Characteristics**:
+- Has a clear end state or deliverable
+- Time-bound (deadline or target date)
+- Requires multiple steps to complete
+- Active work in progress
+
+**Examples**:
+- Plan Q4 marketing campaign
+- Write annual report
+- Organize team offsite
+- Launch new website feature
+
+**Quick PARA Behavior**:
+- Notes in Projects get \`para: projects\` property
+- Subfolder names become persistent tags (e.g., \`pbswi\`, \`personal\`)
+- When moved to Archive, projects get \`archived\` date property
 
 ---
 
-## Original Content
+#### 🎯 **Areas** (\`2 - AREAS\`)
+**Definition**: Ongoing responsibilities that require regular attention but have no end date.
 
+**Characteristics**:
+- No defined endpoint - continues indefinitely
+- Standards to maintain rather than goals to achieve
+- Requires consistent, recurring attention
+- Success = maintaining a standard over time
+
+**Examples**:
+- Health & fitness
+- Professional development
+- Team management
+- Financial planning
+- Relationships
+
+**Quick PARA Behavior**:
+- Notes in Areas get \`para: areas\` property
+- Areas represent long-term commitments
+- Moving between Projects and Areas changes the property but preserves context tags
+
+---
+
+#### 📚 **Resources** (\`3 - RESOURCES\`)
+**Definition**: Reference materials and information you want to keep for future use.
+
+**Characteristics**:
+- Not currently actionable
+- Valuable for reference or inspiration
+- Could become relevant to Projects or Areas later
+- Organized by topic or theme
+
+**Examples**:
+- Research articles
+- Templates
+- How-to guides
+- Meeting notes archive
+- Documentation
+- Learning materials
+
+**Quick PARA Behavior**:
+- Notes in Resources get \`para: resources\` property
+- Templates stored in \`TEMPLATES/\` subfolder are excluded from auto-tagging
+- This is where you keep reusable assets
+
+---
+
+#### 📦 **Archive** (\`4 - ARCHIVE\`)
+**Definition**: Completed projects and inactive items from other categories.
+
+**Characteristics**:
+- No longer active or relevant
+- Kept for historical reference
+- Out of sight but retrievable if needed
+- Organized by original category
+
+**Examples**:
+- Completed projects
+- Old areas you're no longer responsible for
+- Outdated resources
+- Past meeting notes
+
+**Quick PARA Behavior**:
+- Notes moved to Archive get \`para: archive\` property
+- Automatically adds \`archived: YYYY-MM-DD\` date property
+- Previous context tags persist for searchability
+
+---
+
+## How Quick PARA Implements This
+
+### Automatic Properties
+
+The plugin automatically maintains a \`para\` property in every note's frontmatter that reflects its current PARA location.
+
+**Values**: \`inbox\`, \`projects\`, \`areas\`, \`resources\`, \`archive\`
+
+### Persistent Context Tags
+
+As notes move deeper into subfolders, the plugin creates **persistent tags** from folder names.
+
+**When you move this note to Archive**, it becomes:
+- Property: \`para: archive\` (updated)
+- Tags preserve project context
+
+This preserves project context even after archiving.
+
+### The Inbox
+
+The \`0 - INBOX\` folder is a special staging area:
+
+**Purpose**: Capture ideas quickly without deciding where they belong
+
+**Workflow**:
+1. Create new notes in Inbox
+2. Process regularly (daily/weekly)
+3. Move to appropriate PARA category once you know what it is
+
+**Project Updates**: Automatic project status reports are created here for processing.
+
+---
+
+## PARA Workflow
+
+### Daily/Weekly Processing
+
+**Review your Inbox**:
+1. Identify which category each item belongs to
+2. Move notes to Projects, Areas, Resources, or Archive
+3. Keep Inbox as close to empty as possible
+
+**Use the Project Dashboard**:
+- Kanban board in Inbox for tracking active work
+- Visualize what's TODAY, TOMORROW, THIS WEEK
+- See BLOCKED items that need attention
+
+---
+
+## Learning More
+
+### Official PARA Resources
+
+**Tiago Forte's Original Article**:
+https://fortelabs.com/blog/para/
+
+**Building a Second Brain**:
+Book by Tiago Forte covering PARA and personal knowledge management
+https://www.buildingasecondbrain.com/
+
+**Forte Labs Blog**:
+https://fortelabs.com/blog/
+
+### Within Your Vault
+
+**Templates**: See \`3 - RESOURCES/TEMPLATES/\` for all available templates
+
+**Project Dashboard**: Example kanban board in \`0 - INBOX/Project Dashboard.md\`
+
+**Plugin Documentation**: Check the Quick PARA plugin README for technical details
+
+---
+
+**Last Updated**: 2025-11-05
+**Plugin Version**: 0.2.0
+**Method Source**: Forte Labs PARA System
 `
         };
     }
@@ -770,6 +1242,7 @@ archived: <% tp.file.creation_date() %>
 
     /**
      * Deploy a single template to the vault
+     * Smart regeneration: Only creates missing files, never overwrites existing templates
      */
     async deployTemplate(templateName, destination) {
         const content = this.getTemplate(templateName);
@@ -788,19 +1261,18 @@ archived: <% tp.file.creation_date() %>
         const existingFile = this.app.vault.getAbstractFileByPath(destination);
 
         if (existingFile) {
-            if (this.settings.templates.backupBeforeOverwrite) {
-                await this.backupExistingTemplate(destination);
-            }
-            await this.app.vault.modify(existingFile, content);
+            // File exists - skip to preserve user customizations
+            return { status: 'skipped', reason: 'exists' };
         } else {
+            // File doesn't exist - create from template
             await this.app.vault.create(destination, content);
+            return { status: 'created' };
         }
-
-        return true;
     }
 
     /**
      * Deploy all templates to default locations
+     * Uses smart regeneration: only creates missing templates
      */
     async deployAllTemplates() {
         try {
@@ -812,20 +1284,36 @@ archived: <% tp.file.creation_date() %>
                 'projects-template.md': '3 - RESOURCES/TEMPLATES/projects-template.md',
                 'areas-template.md': '3 - RESOURCES/TEMPLATES/areas-template.md',
                 'resources-template.md': '3 - RESOURCES/TEMPLATES/resources-template.md',
-                'archive-template.md': '3 - RESOURCES/TEMPLATES/archive-template.md'
+                'archive-template.md': '3 - RESOURCES/TEMPLATES/archive-template.md',
+                'Project Dashboard.md': '0 - INBOX/Project Dashboard.md',
+                'PARA Method Overview.md': '3 - RESOURCES/PARA Method Overview.md'
             };
 
-            let deployed = 0;
+            let created = 0;
+            let skipped = 0;
+            let errors = 0;
+
             for (const [templateName, destination] of Object.entries(defaultDestinations)) {
                 try {
-                    await this.deployTemplate(templateName, destination);
-                    deployed++;
+                    const result = await this.deployTemplate(templateName, destination);
+                    if (result.status === 'created') {
+                        created++;
+                    } else if (result.status === 'skipped') {
+                        skipped++;
+                    }
                 } catch (error) {
                     console.error(`Failed to deploy ${templateName}:`, error);
+                    errors++;
                 }
             }
 
-            new Notice(`Deployed ${deployed} templates successfully!`);
+            // Report results
+            const parts = [];
+            if (created > 0) parts.push(`${created} created`);
+            if (skipped > 0) parts.push(`${skipped} skipped`);
+            if (errors > 0) parts.push(`${errors} errors`);
+
+            new Notice(`Templates: ${parts.join(', ')}`);
         } catch (error) {
             console.error('Error deploying templates:', error);
             new Notice(`Error deploying templates: ${error.message}`, 5000);
@@ -833,34 +1321,55 @@ archived: <% tp.file.creation_date() %>
     }
 
     /**
-     * Backup existing template before overwriting
+     * Force regenerate all templates (called by Reset Settings)
+     * This is the ONLY method that overwrites existing templates
      */
-    async backupExistingTemplate(templatePath) {
-        const file = this.app.vault.getAbstractFileByPath(templatePath);
-        if (!file) return;
+    async forceRegenerateAllTemplates() {
+        try {
+            new Notice('Regenerating all templates from defaults...');
 
-        const content = await this.app.vault.read(file);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupPath = templatePath.replace('.md', `-backup-${timestamp}.md`);
+            const defaultDestinations = {
+                'default-template.md': '3 - RESOURCES/TEMPLATES/default-template.md',
+                'inbox-template.md': '3 - RESOURCES/TEMPLATES/inbox-template.md',
+                'projects-template.md': '3 - RESOURCES/TEMPLATES/projects-template.md',
+                'areas-template.md': '3 - RESOURCES/TEMPLATES/areas-template.md',
+                'resources-template.md': '3 - RESOURCES/TEMPLATES/resources-template.md',
+                'archive-template.md': '3 - RESOURCES/TEMPLATES/archive-template.md',
+                'Project Dashboard.md': '0 - INBOX/Project Dashboard.md',
+                'PARA Method Overview.md': '3 - RESOURCES/PARA Method Overview.md'
+            };
 
-        await this.app.vault.create(backupPath, content);
-        console.log(`Quick PARA: Backed up template to ${backupPath}`);
-    }
+            let regenerated = 0;
+            for (const [templateName, destination] of Object.entries(defaultDestinations)) {
+                try {
+                    const content = this.getTemplate(templateName);
 
-    /**
-     * Detect if templates have been modified by user
-     */
-    async detectTemplateChanges(templateName, templatePath) {
-        const file = this.app.vault.getAbstractFileByPath(templatePath);
-        if (!file) return { exists: false, modified: false };
+                    // Ensure folder exists
+                    const folderPath = destination.substring(0, destination.lastIndexOf('/'));
+                    if (folderPath && !this.app.vault.getAbstractFileByPath(folderPath)) {
+                        await this.app.vault.createFolder(folderPath);
+                    }
 
-        const currentContent = await this.app.vault.read(file);
-        const originalContent = this.getTemplate(templateName);
+                    const existingFile = this.app.vault.getAbstractFileByPath(destination);
 
-        return {
-            exists: true,
-            modified: currentContent !== originalContent
-        };
+                    if (existingFile) {
+                        // Overwrite existing
+                        await this.app.vault.modify(existingFile, content);
+                    } else {
+                        // Create new
+                        await this.app.vault.create(destination, content);
+                    }
+                    regenerated++;
+                } catch (error) {
+                    console.error(`Failed to regenerate ${templateName}:`, error);
+                }
+            }
+
+            new Notice(`Regenerated ${regenerated} templates from defaults!`);
+        } catch (error) {
+            console.error('Error regenerating templates:', error);
+            new Notice(`Error regenerating templates: ${error.message}`, 5000);
+        }
     }
 }
 
@@ -908,12 +1417,29 @@ class AgendaManager {
      * Parse the Project Dashboard kanban board
      * Returns sections: done, doing, today, tomorrow, this_week, blocked
      */
-    async parseKanbanBoard() {
-        const kanbanPath = this.settings.agendaGeneration.kanbanFile;
-        const file = this.app.vault.getAbstractFileByPath(kanbanPath);
+    async parseKanbanBoard(kanbanPath) {
+        // Use provided path or fall back to settings
+        const boardPath = kanbanPath || this.settings.projectUpdates?.kanbanFile || '0 - INBOX/Project Dashboard.md';
+        let file = this.app.vault.getAbstractFileByPath(boardPath);
 
         if (!file) {
-            throw new Error(`Kanban board not found: ${kanbanPath}`);
+            // Try to recreate from template
+            new Notice('Project Dashboard not found. Creating from template...');
+            const templateManager = new TemplateManager(this.app, this.settings);
+
+            try {
+                await templateManager.deployTemplate('Project Dashboard.md', boardPath);
+                file = this.app.vault.getAbstractFileByPath(boardPath);
+
+                if (!file) {
+                    throw new Error(`Failed to create kanban board at: ${boardPath}`);
+                }
+
+                new Notice('Project Dashboard created successfully!');
+            } catch (error) {
+                console.error('Error creating Project Dashboard:', error);
+                throw new Error(`Kanban board not found and could not be created: ${boardPath}`);
+            }
         }
 
         const content = await this.app.vault.read(file);
@@ -971,20 +1497,23 @@ class AgendaManager {
     }
 
     /**
-     * Update the Weekly 1-on-1 agenda with data from kanban board
+     * Update a project update agenda with data from kanban board
+     *
+     * @param {string} agendaPath - Path to the agenda file (e.g., "0 - INBOX/UPDATE — Project Name.md")
+     * @param {string} kanbanPath - Optional path to kanban board (defaults to settings)
+     * @param {string} projectFolder - Optional project folder to filter tasks (defaults to all projects)
      */
-    async updateWeeklyAgenda() {
+    async updateProjectAgenda(agendaPath, kanbanPath = null, projectFolder = null) {
         try {
-            new Notice('Updating weekly 1-on-1 agenda...');
+            new Notice('Updating project agenda...');
 
             // Parse kanban board
-            const kanbanData = await this.parseKanbanBoard();
+            const kanbanData = await this.parseKanbanBoard(kanbanPath);
 
             // Get next Monday date
             const mondayDate = this.getNextMondayDate();
 
             // Get agenda file
-            const agendaPath = this.settings.agendaGeneration.agendaFile;
             const file = this.app.vault.getAbstractFileByPath(agendaPath);
 
             if (!file) {
@@ -1005,15 +1534,15 @@ class AgendaManager {
                 updatedContent = this.createMondaySection(content, mondayDate);
             }
 
-            // Update the Monday section with kanban data
-            updatedContent = this.updateMondaySection(updatedContent, mondayDate, kanbanData);
+            // Update the Monday section with kanban data (now async)
+            updatedContent = await this.updateMondaySection(updatedContent, mondayDate, kanbanData, projectFolder);
 
             // Write back to file
             await this.app.vault.modify(file, updatedContent);
 
-            new Notice('Weekly agenda updated successfully!');
+            new Notice('Project agenda updated successfully!');
         } catch (error) {
-            console.error('Error updating weekly agenda:', error);
+            console.error('Error updating project agenda:', error);
             new Notice(`Error updating agenda: ${error.message}`, 5000);
         }
     }
@@ -1042,8 +1571,8 @@ class AgendaManager {
 
 <!-- END AUTO-MANAGED -->
 
-#### Feedback/updates/notes from Tim
-  * *(add Tim's feedback here after the meeting)*
+#### Feedback/updates/notes from meeting
+  * *(add any notes and action items here after the meeting)*
 
 ---
 
@@ -1064,8 +1593,13 @@ class AgendaManager {
 
     /**
      * Update the Monday section with kanban data
+     *
+     * @param {string} content - Full agenda file content
+     * @param {string} mondayDate - Formatted Monday date
+     * @param {Object} kanbanData - Parsed kanban board data
+     * @param {string} projectFolder - Optional project folder to filter tasks
      */
-    updateMondaySection(content, mondayDate, kanbanData) {
+    async updateMondaySection(content, mondayDate, kanbanData, projectFolder = null) {
         // Find the Monday section
         const sectionPattern = new RegExp(
             `(### ${this.escapeRegex(mondayDate)}\\s*\\n)(.*?)(?=\\n### |\\n---|\\Z)`,
@@ -1080,8 +1614,8 @@ class AgendaManager {
 
         let sectionBody = match[2];
 
-        // Update Projects section
-        const projectsContent = this.formatProjectsSection(kanbanData);
+        // Update Projects section with optional folder filter (now async)
+        const projectsContent = await this.formatProjectsSection(kanbanData, projectFolder);
         sectionBody = this.updateAutoSection(sectionBody, 'Projects', projectsContent);
 
         // Update Blocked section
@@ -1122,11 +1656,14 @@ class AgendaManager {
 
     /**
      * Format the Projects section content
+     *
+     * @param {Object} kanbanData - Parsed kanban board data
+     * @param {string} projectFolder - Optional project folder path to filter tasks
      */
-    formatProjectsSection(kanbanData) {
-        const lines = ['*Auto-updated from Project Dashboard*', ''];
+    async formatProjectsSection(kanbanData, projectFolder = null) {
+        const lines = ['*Auto-updated from Project Dashboard and project folder tasks*', ''];
 
-        // Combine active work sections
+        // Combine active work sections from kanban
         const activeTasks = [
             ...kanbanData.doing,
             ...kanbanData.today,
@@ -1134,18 +1671,23 @@ class AgendaManager {
             ...kanbanData.this_week
         ];
 
-        // Extract unique PBSWI project wikilinks
+        // Extract unique project wikilinks from kanban
         const projectLinks = new Set();
-        const pbswiPath = this.settings.agendaGeneration.pbswiFolder;
 
         for (const task of activeTasks) {
             const wikilinks = task.match(/\[\[([^\]]+)\]\]/g);
             if (wikilinks) {
                 for (const link of wikilinks) {
                     const projectName = link.slice(2, -2);
-                    // Check if project exists in PBSWI folder
-                    const projectFile = this.app.vault.getAbstractFileByPath(`${pbswiPath}/${projectName}.md`);
-                    if (projectFile) {
+
+                    // If projectFolder is specified, check if project exists there
+                    if (projectFolder) {
+                        const projectFile = this.app.vault.getAbstractFileByPath(`${projectFolder}/${projectName}.md`);
+                        if (projectFile) {
+                            projectLinks.add(link);
+                        }
+                    } else {
+                        // No folder filter - include all wikilinks from tasks
                         projectLinks.add(link);
                     }
                 }
@@ -1155,11 +1697,26 @@ class AgendaManager {
         if (projectLinks.size > 0) {
             const sorted = Array.from(projectLinks).sort();
             for (const link of sorted) {
-                lines.push(`  * ${link}`);
-                // TODO: Extract completed tasks from project note
+                lines.push(`- ${link}`);
             }
-        } else {
-            lines.push('  * *(no PBSWI projects this week)*');
+        }
+
+        // If projectFolder specified, also extract tasks directly from project notes
+        let folderTasks = null;
+        if (projectFolder) {
+            folderTasks = await this.extractTasksFromProjectFolder(projectFolder);
+
+            if (folderTasks.activeTasks.length > 0) {
+                lines.push('');
+                lines.push('*Active tasks from project notes:*');
+                for (const task of folderTasks.activeTasks.slice(0, 10)) {
+                    lines.push(task);
+                }
+            }
+        }
+
+        if (projectLinks.size === 0 && (!projectFolder || !folderTasks || folderTasks.activeTasks.length === 0)) {
+            lines.push('- *(no active projects this week)*');
         }
 
         return lines.join('\n');
@@ -1223,6 +1780,44 @@ class AgendaManager {
     }
 
     /**
+     * Extract tasks from notes in a project folder
+     * Returns an object with active and completed tasks
+     */
+    async extractTasksFromProjectFolder(projectFolder) {
+        const activeTasks = [];
+        const completedTasks = [];
+
+        try {
+            // Get all markdown files in the project folder
+            const files = this.app.vault.getMarkdownFiles()
+                .filter(file => file.path.startsWith(projectFolder + '/'));
+
+            for (const file of files) {
+                const content = await this.app.vault.read(file);
+
+                // Extract task lines (both completed and incomplete)
+                const taskRegex = /^[\s-]*\[[ xX]\]\s+(.+)$/gm;
+                const matches = [...content.matchAll(taskRegex)];
+
+                for (const match of matches) {
+                    const fullLine = match[0];
+                    const isCompleted = /\[x\]/i.test(fullLine);
+
+                    if (isCompleted) {
+                        completedTasks.push(fullLine);
+                    } else {
+                        activeTasks.push(fullLine);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error(`Error extracting tasks from ${projectFolder}:`, error);
+        }
+
+        return { activeTasks, completedTasks };
+    }
+
+    /**
      * Escape special regex characters
      */
     escapeRegex(str) {
@@ -1244,133 +1839,292 @@ class QuickParaSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Quick PARA Settings' });
+        containerEl.createEl('h1', { text: 'Quick PARA Settings' });
+
+        // Header description
+        containerEl.createEl('p', {
+            text: 'Quick PARA helps you organize your Obsidian vault using the PARA method (Projects, Areas, Resources, Archive). This plugin automates folder setup, template deployment, and project update generation.',
+            cls: 'setting-item-description'
+        });
+
+        containerEl.createEl('p', {
+            text: 'Learn more about PARA: See the "PARA Method Overview" note in your Resources folder.',
+            cls: 'setting-item-description'
+        });
+
+        containerEl.createEl('hr');
+
+        // Actions Section - AT THE TOP
+        containerEl.createEl('h3', { text: 'Quick Actions' });
+
+        new Setting(containerEl)
+            .setName('🚀 Run Setup Wizard')
+            .setDesc('Launch the step-by-step setup wizard to create your PARA folder structure and deploy templates')
+            .addButton(button => button
+                .setButtonText('Run Setup Wizard')
+                .setCta()
+                .onClick(async () => {
+                    await this.plugin.provisioningManager.runSetupWizard();
+                }));
+
+        new Setting(containerEl)
+            .setName('🔍 Check Dependencies')
+            .setDesc('Verify that required plugins (Templater, Tasks, Kanban) are installed. Make sure each plugin is also active after installation.')
+            .addButton(button => button
+                .setButtonText('Check Dependencies')
+                .onClick(async () => {
+                    await this.plugin.checkDependencies(true);
+                }));
+
+        new Setting(containerEl)
+            .setName('🏷️ Update All PARA Tags')
+            .setDesc('Bulk update PARA tags for all files in your vault to match their current folder locations')
+            .addButton(button => button
+                .setButtonText('Update All Tags')
+                .onClick(async () => {
+                    await this.plugin.taggingManager.bulkUpdateTags();
+                }));
+
+        new Setting(containerEl)
+            .setName('📝 Deploy PARA Templates')
+            .setDesc('Install default templates for notes in each PARA folder (inbox, projects, areas, resources, archive), plus the Project Dashboard and PARA Method Overview guide. These are starting points you can customize to your liking. Set these templates in Templater plugin settings to use them when creating new notes. Only creates missing templates, will not overwrite your customizations.')
+            .addButton(button => button
+                .setButtonText('Deploy Templates')
+                .onClick(async () => {
+                    await this.plugin.templateManager.deployAllTemplates();
+                }));
+
+        // Dependency links
+        containerEl.createEl('h4', { text: 'Required Dependencies' });
+
+        const templaterLink = containerEl.createEl('div', { cls: 'setting-item-description' });
+        templaterLink.innerHTML = '• <strong>Templater</strong>: Required for template variable substitution. <a href="obsidian://show-plugin?id=templater-obsidian">Install from Community Plugins</a>';
+
+        const tasksLink = containerEl.createEl('div', { cls: 'setting-item-description' });
+        tasksLink.innerHTML = '• <strong>Tasks</strong>: Required for task management features. <a href="obsidian://show-plugin?id=obsidian-tasks-plugin">Install from Community Plugins</a>';
+
+        const kanbanLink = containerEl.createEl('div', { cls: 'setting-item-description' });
+        kanbanLink.innerHTML = '• <strong>Kanban</strong>: Required for Project Dashboard and project update generation. This plugin visualizes your active work and enables the automated update workflow. <a href="obsidian://show-plugin?id=obsidian-kanban">Install from Community Plugins</a>';
+
+        containerEl.createEl('hr');
 
         // PARA Folders Section
-        containerEl.createEl('h3', { text: 'PARA Folder Mappings' });
+        containerEl.createEl('h3', { text: 'PARA Folder Configuration' });
         containerEl.createEl('p', {
-            text: 'Configure which folders represent each PARA location.',
+            text: 'Configure the names of your five core PARA folders. These folders will be created automatically during setup if they don\'t exist. The plugin uses these paths to determine where notes belong and what properties to assign.',
+            cls: 'setting-item-description'
+        });
+
+        containerEl.createEl('p', {
+            text: 'Note: Folder names are case-insensitive. The plugin will match "1 - projects", "1 - Projects", or "1 - PROJECTS" equally.',
+            cls: 'setting-item-description'
+        });
+
+        // Create folder suggestions datalist (shared by all folder inputs)
+        const folders = this.app.vault.getAllLoadedFiles()
+            .filter(f => f.children !== undefined)
+            .map(f => f.path)
+            .sort();
+        const datalistId = 'para-folder-suggest';
+        const datalist = containerEl.createEl('datalist', { attr: { id: datalistId } });
+        folders.forEach(folder => {
+            datalist.createEl('option', { value: folder });
+        });
+
+        const inboxSetting = new Setting(containerEl)
+            .setName('Inbox Folder')
+            .setDesc('Top-level folder for inbox items');
+        const inboxInput = inboxSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '0 - INBOX',
+            value: this.plugin.settings.paraFolders.inbox,
+            attr: { list: datalistId }
+        });
+        inboxInput.style.width = '100%';
+        inboxInput.addEventListener('input', async (e) => {
+            this.plugin.settings.paraFolders.inbox = e.target.value.trim();
+            await this.plugin.saveSettings();
+        });
+
+        const projectsSetting = new Setting(containerEl)
+            .setName('Projects Folder')
+            .setDesc('Top-level folder for active projects');
+        const projectsInput = projectsSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '1 - PROJECTS',
+            value: this.plugin.settings.paraFolders.projects,
+            attr: { list: datalistId }
+        });
+        projectsInput.style.width = '100%';
+        projectsInput.addEventListener('input', async (e) => {
+            this.plugin.settings.paraFolders.projects = e.target.value.trim();
+            await this.plugin.saveSettings();
+        });
+
+        const areasSetting = new Setting(containerEl)
+            .setName('Areas Folder')
+            .setDesc('Top-level folder for ongoing areas');
+        const areasInput = areasSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '2 - AREAS',
+            value: this.plugin.settings.paraFolders.areas,
+            attr: { list: datalistId }
+        });
+        areasInput.style.width = '100%';
+        areasInput.addEventListener('input', async (e) => {
+            this.plugin.settings.paraFolders.areas = e.target.value.trim();
+            await this.plugin.saveSettings();
+        });
+
+        const resourcesSetting = new Setting(containerEl)
+            .setName('Resources Folder')
+            .setDesc('Top-level folder for reference materials');
+        const resourcesInput = resourcesSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '3 - RESOURCES',
+            value: this.plugin.settings.paraFolders.resources,
+            attr: { list: datalistId }
+        });
+        resourcesInput.style.width = '100%';
+        resourcesInput.addEventListener('input', async (e) => {
+            this.plugin.settings.paraFolders.resources = e.target.value.trim();
+            await this.plugin.saveSettings();
+        });
+
+        const archiveSetting = new Setting(containerEl)
+            .setName('Archive Folder')
+            .setDesc('Top-level folder for archived items');
+        const archiveInput = archiveSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '4 - ARCHIVE',
+            value: this.plugin.settings.paraFolders.archive,
+            attr: { list: datalistId }
+        });
+        archiveInput.style.width = '100%';
+        archiveInput.addEventListener('input', async (e) => {
+            this.plugin.settings.paraFolders.archive = e.target.value.trim();
+            await this.plugin.saveSettings();
+        });
+
+        containerEl.createEl('hr');
+
+        // Project Updates Section
+        containerEl.createEl('h3', { text: 'Project Update Generation' });
+
+        containerEl.createEl('p', {
+            text: 'Automatically generate recurring status reports for any project folder. Each project can have its own schedule (daily, weekly, or monthly). All update notes are created in your Inbox folder with names like "UPDATE — [PROJECT NAME].md".',
+            cls: 'setting-item-description'
+        });
+
+        containerEl.createEl('p', {
+            text: 'The Kanban plugin (required dependency) provides the Project Dashboard that tracks your active work. If a Kanban board doesn\'t exist at the path below, deploy the Project Dashboard template using the "Deploy PARA Templates" button. You can change the board path if needed.',
             cls: 'setting-item-description'
         });
 
         new Setting(containerEl)
-            .setName('Inbox Folder')
-            .setDesc('Top-level folder for inbox items')
-            .addText(text => text
-                .setPlaceholder('0 - INBOX')
-                .setValue(this.plugin.settings.paraFolders.inbox)
-                .onChange(async (value) => {
-                    this.plugin.settings.paraFolders.inbox = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Projects Folder')
-            .setDesc('Top-level folder for active projects')
-            .addText(text => text
-                .setPlaceholder('1 - Projects')
-                .setValue(this.plugin.settings.paraFolders.projects)
-                .onChange(async (value) => {
-                    this.plugin.settings.paraFolders.projects = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Areas Folder')
-            .setDesc('Top-level folder for ongoing areas')
-            .addText(text => text
-                .setPlaceholder('2 - AREAS')
-                .setValue(this.plugin.settings.paraFolders.areas)
-                .onChange(async (value) => {
-                    this.plugin.settings.paraFolders.areas = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Resources Folder')
-            .setDesc('Top-level folder for reference materials')
-            .addText(text => text
-                .setPlaceholder('3 - RESOURCES')
-                .setValue(this.plugin.settings.paraFolders.resources)
-                .onChange(async (value) => {
-                    this.plugin.settings.paraFolders.resources = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Archive Folder')
-            .setDesc('Top-level folder for archived items')
-            .addText(text => text
-                .setPlaceholder('4 - ARCHIVE')
-                .setValue(this.plugin.settings.paraFolders.archive)
-                .onChange(async (value) => {
-                    this.plugin.settings.paraFolders.archive = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        // Agenda Generation Section
-        containerEl.createEl('h3', { text: 'Weekly Agenda Generation' });
-
-        new Setting(containerEl)
-            .setName('Enable Agenda Generation')
-            .setDesc('Automatically update weekly 1-on-1 agenda from Project Dashboard')
+            .setName('Enable Project Updates')
+            .setDesc('Turn on scheduled project update generation. When disabled, no automatic updates will be created.')
             .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.agendaGeneration.enabled)
+                .setValue(this.plugin.settings.projectUpdates.enabled)
                 .onChange(async (value) => {
-                    this.plugin.settings.agendaGeneration.enabled = value;
+                    this.plugin.settings.projectUpdates.enabled = value;
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
+        // Kanban Board File with autocomplete
+        const kanbanSetting = new Setting(containerEl)
             .setName('Kanban Board File')
-            .setDesc('Path to Project Dashboard kanban board')
-            .addText(text => text
-                .setPlaceholder('0 - INBOX/Project Dashboard.md')
-                .setValue(this.plugin.settings.agendaGeneration.kanbanFile)
-                .onChange(async (value) => {
-                    this.plugin.settings.agendaGeneration.kanbanFile = value.trim();
-                    await this.plugin.saveSettings();
+            .setDesc('Path to your Project Dashboard kanban board. If this file doesn\'t exist, it will be created in your Inbox when you enable Project Updates.');
+
+        // Create datalist for markdown files
+        const files = this.app.vault.getMarkdownFiles().map(f => f.path).sort();
+        const filesDatalistId = 'kanban-file-suggest';
+        const filesDatalist = containerEl.createEl('datalist', { attr: { id: filesDatalistId } });
+        files.forEach(file => {
+            filesDatalist.createEl('option', { value: file });
+        });
+
+        const kanbanInput = kanbanSetting.controlEl.createEl('input', {
+            type: 'text',
+            placeholder: '0 - INBOX/Project Dashboard.md',
+            value: this.plugin.settings.projectUpdates.kanbanFile || '0 - INBOX/Project Dashboard.md',
+            attr: { list: filesDatalistId }
+        });
+        kanbanInput.style.width = '100%';
+        kanbanInput.addEventListener('input', async (e) => {
+            this.plugin.settings.projectUpdates.kanbanFile = e.target.value.trim();
+            await this.plugin.saveSettings();
+        });
+
+        // Project update configurations list
+        if (this.plugin.settings.projectUpdates.configs.length === 0) {
+            containerEl.createEl('p', {
+                text: 'No project updates configured. Click "Add Project Update" to create your first automated status report.',
+                cls: 'setting-item-description'
+            });
+        } else {
+            this.plugin.settings.projectUpdates.configs.forEach((config, index) => {
+                // Build description with schedule details
+                let scheduleDesc = config.schedule;
+                if (config.schedule === 'weekly' && config.dayOfWeek) {
+                    scheduleDesc = `${config.dayOfWeek}s`;
+                }
+                if (config.timeOfDay) {
+                    scheduleDesc += ` at ${config.timeOfDay}`;
+                }
+                const fullDesc = `${scheduleDesc} • ${config.projectFolder}${config.enabled ? '' : ' (disabled)'}`;
+
+                new Setting(containerEl)
+                    .setName(config.name || 'Unnamed Project Update')
+                    .setDesc(fullDesc)
+                    .addButton(button => button
+                        .setButtonText('Edit')
+                        .onClick(() => {
+                            this.plugin.openProjectUpdateConfigModal(config, index);
+                        }))
+                    .addButton(button => button
+                        .setButtonText('Delete')
+                        .setWarning()
+                        .onClick(async () => {
+                            this.plugin.settings.projectUpdates.configs.splice(index, 1);
+                            await this.plugin.saveSettings();
+                            this.display();
+                        }));
+            });
+        }
+
+        new Setting(containerEl)
+            .setName('Add Project Update')
+            .setDesc('Configure a new automated project update')
+            .addButton(button => button
+                .setButtonText('+ Add Project Update')
+                .onClick(() => {
+                    this.plugin.openProjectUpdateConfigModal();
                 }));
 
         new Setting(containerEl)
-            .setName('Weekly 1-on-1 File')
-            .setDesc('Path to weekly 1-on-1 note')
-            .addText(text => text
-                .setPlaceholder('0 - INBOX/Weekly 1 on 1.md')
-                .setValue(this.plugin.settings.agendaGeneration.agendaFile)
-                .onChange(async (value) => {
-                    this.plugin.settings.agendaGeneration.agendaFile = value.trim();
-                    await this.plugin.saveSettings();
+            .setName('Generate Updates Now')
+            .setDesc('Manually generate project updates for all enabled configurations right now')
+            .addButton(button => button
+                .setButtonText('Generate Now')
+                .setCta()
+                .onClick(async () => {
+                    await this.plugin.generateAllProjectUpdates();
                 }));
 
-        new Setting(containerEl)
-            .setName('PBSWI Projects Folder')
-            .setDesc('Folder containing PBSWI work projects')
-            .addText(text => text
-                .setPlaceholder('1 - Projects/PBSWI')
-                .setValue(this.plugin.settings.agendaGeneration.pbswiFolder)
-                .onChange(async (value) => {
-                    this.plugin.settings.agendaGeneration.pbswiFolder = value.trim();
-                    await this.plugin.saveSettings();
-                }));
+        containerEl.createEl('hr');
 
         // Tagging Behavior Section
-        containerEl.createEl('h3', { text: 'Tagging Behavior' });
+        containerEl.createEl('h3', { text: 'Automatic Tagging Behavior' });
+
+        containerEl.createEl('p', {
+            text: 'Control how the plugin automatically assigns properties and tags when you create or move notes. The "para" property (locked to this name) always reflects a note\'s current PARA location, while subfolder tags provide historical context.',
+            cls: 'setting-item-description'
+        });
 
         new Setting(containerEl)
-            .setName('Property Name')
-            .setDesc('Name of the property used to store PARA location')
-            .addText(text => text
-                .setPlaceholder('para')
-                .setValue(this.plugin.settings.tagging.propertyName)
-                .onChange(async (value) => {
-                    this.plugin.settings.tagging.propertyName = value.trim();
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Persist Subfolder Tags')
-            .setDesc('Keep subfolder tags when files are moved (historical breadcrumbs)')
+            .setName('Preserve Subfolder Tags')
+            .setDesc('When enabled, tags from subfolder names persist even when you move notes between PARA folders. This preserves project context over time.')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.tagging.persistSubfolderTags)
                 .onChange(async (value) => {
@@ -1378,18 +2132,20 @@ class QuickParaSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        new Setting(containerEl)
-            .setName('Migrate Old Tags')
-            .setDesc('Convert old para/* nested tags to property format')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.tagging.migrateOldTags)
-                .onChange(async (value) => {
-                    this.plugin.settings.tagging.migrateOldTags = value;
-                    await this.plugin.saveSettings();
-                }));
+        containerEl.createEl('hr');
 
         // Template Management Section
-        containerEl.createEl('h3', { text: 'Template Management' });
+        containerEl.createEl('h3', { text: 'PARA Templates' });
+
+        containerEl.createEl('p', {
+            text: 'Manage the default templates that get deployed to your vault. Templates are stored in "3 - RESOURCES/TEMPLATES/" and use Templater syntax for dynamic content.',
+            cls: 'setting-item-description'
+        });
+
+        containerEl.createEl('p', {
+            text: 'Note: Template files themselves never receive PARA properties - they remain "clean" so new notes created from them start fresh.',
+            cls: 'setting-item-description'
+        });
 
         new Setting(containerEl)
             .setName('Auto-Deploy Templates')
@@ -1402,47 +2158,37 @@ class QuickParaSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Backup Before Overwrite')
-            .setDesc('Create backup when updating existing templates')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.templates.backupBeforeOverwrite)
-                .onChange(async (value) => {
-                    this.plugin.settings.templates.backupBeforeOverwrite = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        // Actions Section
-        containerEl.createEl('h3', { text: 'Actions' });
-
-        new Setting(containerEl)
-            .setName('Run Setup Wizard')
-            .setDesc('Provision PARA folders and deploy templates')
+            .setName('Clean Template Files')
+            .setDesc('Use this if when you create new notes, they are being pre-assigned odd tags or PARA properties that don\'t match the folder you place them in. This resets template files to remove any accidentally saved frontmatter.')
             .addButton(button => button
-                .setButtonText('Run Setup')
-                .setCta()
+                .setButtonText('Clean Templates')
                 .onClick(async () => {
-                    await this.plugin.provisioningManager.runSetupWizard();
+                    await this.plugin.taggingManager.cleanTemplateFiles();
                 }));
 
-        new Setting(containerEl)
-            .setName('Check Dependencies')
-            .setDesc('Verify Templater and Tasks plugins are installed')
-            .addButton(button => button
-                .setButtonText('Check Now')
-                .onClick(async () => {
-                    await this.plugin.checkDependencies(true);
-                }));
+        containerEl.createEl('hr');
+
+        // Advanced Section
+        containerEl.createEl('h3', { text: 'Advanced Settings' });
 
         new Setting(containerEl)
             .setName('Reset to Defaults')
-            .setDesc('Restore all settings to default values')
+            .setDesc('⚠️ WARNING: This will restore all settings to defaults AND regenerate all templates from defaults, overwriting any customizations you made. Your folders and notes will not be affected.')
             .addButton(button => button
-                .setButtonText('Reset')
+                .setButtonText('Reset All Settings')
                 .setWarning()
                 .onClick(async () => {
-                    this.plugin.settings = Object.assign({}, DEFAULT_SETTINGS);
-                    await this.plugin.saveSettings();
-                    this.display();
+                    if (confirm('⚠️ WARNING: This will:\n\n1. Reset ALL plugin settings to defaults\n2. OVERWRITE all templates with defaults (your custom template changes will be lost)\n\nYour folders and notes will NOT be affected.\n\nAre you sure you want to continue?')) {
+                        // Reset settings
+                        this.plugin.settings = Object.assign({}, DEFAULT_SETTINGS);
+                        await this.plugin.saveSettings();
+
+                        // Force regenerate all templates
+                        await this.plugin.templateManager.forceRegenerateAllTemplates();
+
+                        // Refresh settings UI
+                        this.display();
+                    }
                 }));
     }
 }
@@ -1535,14 +2281,21 @@ module.exports = class QuickParaPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: 'update-weekly-agenda',
-            name: 'Update weekly 1-on-1 agenda',
+            id: 'generate-project-updates',
+            name: 'Generate all project updates now',
             callback: async () => {
-                if (!this.settings.agendaGeneration.enabled) {
-                    new Notice('Agenda generation is disabled in settings');
+                if (!this.settings.projectUpdates?.enabled) {
+                    new Notice('Project updates are disabled in settings. Enable them first.');
                     return;
                 }
-                await this.agendaManager.updateWeeklyAgenda();
+
+                if (!this.settings.projectUpdates?.configs || this.settings.projectUpdates.configs.length === 0) {
+                    new Notice('No project updates configured. Add one in settings first.');
+                    return;
+                }
+
+                // Generate updates for all enabled configs
+                await this.generateAllProjectUpdates();
             }
         });
 
@@ -1573,6 +2326,26 @@ module.exports = class QuickParaPlugin extends Plugin {
         // Add ribbon icon for quick setup
         this.addRibbonIcon('layout-grid', 'Quick PARA Setup', async () => {
             await this.provisioningManager.runSetupWizard();
+        });
+
+        // Add ribbon icon for generating project updates
+        this.addRibbonIcon('calendar-check', 'Generate Project Updates', async () => {
+            if (!this.settings.projectUpdates?.enabled) {
+                new Notice('Project updates are disabled. Enable them in settings first.');
+                return;
+            }
+
+            if (!this.settings.projectUpdates?.configs || this.settings.projectUpdates.configs.length === 0) {
+                new Notice('No project updates configured. Add one in settings first.');
+                return;
+            }
+
+            await this.generateAllProjectUpdates();
+        });
+
+        // Add ribbon icon for bulk tag update
+        this.addRibbonIcon('tags', 'Update PARA tags for all files', async () => {
+            await this.taggingManager.bulkUpdateTags();
         });
 
         // Add settings tab
@@ -1612,8 +2385,133 @@ module.exports = class QuickParaPlugin extends Plugin {
         }, 2000);
     }
 
+    /**
+     * Open the project update configuration modal
+     * @param {Object} existingConfig - Existing config to edit (null for new)
+     * @param {number} configIndex - Index of config in array (for editing)
+     */
+    openProjectUpdateConfigModal(existingConfig = null, configIndex = null) {
+        const modal = new ProjectUpdateConfigModal(
+            this.app,
+            this,
+            existingConfig,
+            async (config) => {
+                if (configIndex !== null) {
+                    // Edit existing config
+                    this.settings.projectUpdates.configs[configIndex] = config;
+                } else {
+                    // Add new config
+                    this.settings.projectUpdates.configs.push(config);
+                }
+
+                await this.saveSettings();
+
+                // Refresh settings tab
+                const settingsTab = this.app.setting.pluginTabs.find(tab => tab instanceof QuickParaSettingTab);
+                if (settingsTab) {
+                    settingsTab.display();
+                }
+
+                new Notice(`Project update "${config.name}" saved!`);
+            }
+        );
+        modal.open();
+    }
+
+    /**
+     * Generate all project updates for enabled configurations
+     */
+    async generateAllProjectUpdates() {
+        const enabledConfigs = this.settings.projectUpdates.configs.filter(c => c.enabled);
+
+        if (enabledConfigs.length === 0) {
+            new Notice('No enabled project updates found.');
+            return;
+        }
+
+        new Notice(`Generating ${enabledConfigs.length} project update(s)...`);
+
+        let successCount = 0;
+        for (const config of enabledConfigs) {
+            try {
+                await this.generateProjectUpdate(config);
+                successCount++;
+            } catch (error) {
+                console.error(`Failed to generate update for ${config.name}:`, error);
+                new Notice(`Error generating update for ${config.name}: ${error.message}`, 5000);
+            }
+        }
+
+        new Notice(`Generated ${successCount} of ${enabledConfigs.length} project update(s) successfully!`);
+    }
+
+    /**
+     * Generate a single project update
+     * @param {Object} config - Project update configuration
+     */
+    async generateProjectUpdate(config) {
+        const inboxFolder = this.settings.paraFolders.inbox || '0 - INBOX';
+        const updateFileName = `UPDATE — ${config.name}.md`;
+        const updatePath = `${inboxFolder}/${updateFileName}`;
+
+        // Check if update file already exists
+        let updateFile = this.app.vault.getAbstractFileByPath(updatePath);
+
+        if (!updateFile) {
+            // Create new update file
+            const initialContent = `---
+tags:
+  - all
+  - project-updates
+para: inbox
+created: ${new Date().toISOString().split('T')[0]}
+project_folder: ${config.projectFolder}
+---
+
+# ${updateFileName.replace('.md', '')}
+
+## Notes
+
+`;
+            updateFile = await this.app.vault.create(updatePath, initialContent);
+            console.log(`Quick PARA: Created new project update file: ${updatePath}`);
+        }
+
+        // Update the agenda with kanban data
+        const kanbanPath = this.settings.projectUpdates.kanbanFile;
+        await this.agendaManager.updateProjectAgenda(updatePath, kanbanPath, config.projectFolder);
+
+        console.log(`Quick PARA: Updated project agenda for ${config.name}`);
+    }
+
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+
+        // Migration: Convert old agendaGeneration settings to new projectUpdates if needed
+        if (this.settings.agendaGeneration && !this.settings.projectUpdates) {
+            console.log('Migrating old agendaGeneration settings to projectUpdates');
+            this.settings.projectUpdates = {
+                enabled: this.settings.agendaGeneration.enabled || false,
+                kanbanFile: this.settings.agendaGeneration.kanbanFile || '0 - INBOX/Project Dashboard.md',
+                configs: []
+            };
+            // Old settings are preserved for backward compatibility but not actively used
+        }
+
+        // Ensure new settings structure exists
+        if (!this.settings.projectUpdates) {
+            this.settings.projectUpdates = DEFAULT_SETTINGS.projectUpdates;
+        }
+
+        // Ensure kanbanFile exists in projectUpdates
+        if (!this.settings.projectUpdates.kanbanFile) {
+            this.settings.projectUpdates.kanbanFile = '0 - INBOX/Project Dashboard.md';
+        }
+
+        // Remove migrateOldTags if it exists (no longer relevant for new users)
+        if (this.settings.tagging && this.settings.tagging.migrateOldTags !== undefined) {
+            delete this.settings.tagging.migrateOldTags;
+        }
     }
 
     async saveSettings() {

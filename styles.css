@@ -1,0 +1,34 @@
+/* Quick PARA Plugin Styles */
+
+.para-folders-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+}
+
+.para-folders-table th,
+.para-folders-table td {
+    padding: 0.5em;
+    text-align: left;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.para-folders-table th {
+    font-weight: 600;
+    background: var(--background-secondary);
+}
+
+.para-exists {
+    color: var(--text-success);
+}
+
+.para-create {
+    color: var(--text-accent);
+}
+
+.modal-button-container {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    margin-top: 1.5em;
+}
