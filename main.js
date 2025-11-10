@@ -1615,6 +1615,7 @@ class AgendaManager {
         let sectionBody = match[2];
 
         // Update Projects section with optional folder filter (now async)
+        // Projects section now includes both open and completed tasks grouped by project
         const projectsContent = await this.formatProjectsSection(kanbanData, projectFolder);
         sectionBody = this.updateAutoSection(sectionBody, 'Projects', projectsContent);
 
@@ -1622,9 +1623,7 @@ class AgendaManager {
         const blockedContent = this.formatBlockedSection(kanbanData);
         sectionBody = this.updateAutoSection(sectionBody, 'Blocked/feedback needed', blockedContent);
 
-        // Update Highlights section
-        const highlightsContent = this.formatHighlightsSection(kanbanData);
-        sectionBody = this.updateAutoSection(sectionBody, 'Daily Highlights \\(This Week\\)', highlightsContent);
+        // Note: Daily Highlights section removed - completed tasks now integrated under their projects
 
         // Reconstruct content
         return content.slice(0, match.index) + match[1] + sectionBody + content.slice(match.index + match[0].length);
@@ -1671,51 +1670,135 @@ class AgendaManager {
             ...kanbanData.this_week
         ];
 
-        // Extract unique project wikilinks from kanban
-        const projectLinks = new Set();
+        // Get completed tasks from kanban "Done" section
+        const completedTasks = this.filterRecentTasks(kanbanData.done, 7);
 
+        // Build map of project notes with their tasks
+        const projectMap = new Map(); // project wikilink -> {open: [], completed: []}
+
+        // Process active tasks from kanban
         for (const task of activeTasks) {
             const wikilinks = task.match(/\[\[([^\]]+)\]\]/g);
             if (wikilinks) {
                 for (const link of wikilinks) {
                     const projectName = link.slice(2, -2);
 
-                    // If projectFolder is specified, check if project exists there
+                    // Check if project exists in folder
                     if (projectFolder) {
                         const projectFile = this.app.vault.getAbstractFileByPath(`${projectFolder}/${projectName}.md`);
-                        if (projectFile) {
-                            projectLinks.add(link);
+                        if (!projectFile) continue;
+                    }
+
+                    if (!projectMap.has(link)) {
+                        projectMap.set(link, { open: [], completed: [] });
+                    }
+                    projectMap.get(link).open.push(task);
+                }
+            }
+        }
+
+        // Process completed tasks from kanban
+        for (const task of completedTasks) {
+            const wikilinks = task.match(/\[\[([^\]]+)\]\]/g);
+            if (wikilinks) {
+                for (const link of wikilinks) {
+                    const projectName = link.slice(2, -2);
+
+                    // Check if project exists in folder
+                    if (projectFolder) {
+                        const projectFile = this.app.vault.getAbstractFileByPath(`${projectFolder}/${projectName}.md`);
+                        if (!projectFile) continue;
+                    }
+
+                    if (!projectMap.has(link)) {
+                        projectMap.set(link, { open: [], completed: [] });
+                    }
+                    projectMap.get(link).completed.push(task);
+                }
+            }
+        }
+
+        // If projectFolder specified, also extract tasks directly from project notes
+        if (projectFolder) {
+            const files = this.app.vault.getMarkdownFiles()
+                .filter(file => file.path.startsWith(projectFolder + '/'));
+
+            for (const file of files) {
+                const content = await this.app.vault.read(file);
+                const link = `[[${file.basename}]]`;
+
+                if (!projectMap.has(link)) {
+                    projectMap.set(link, { open: [], completed: [] });
+                }
+
+                // Extract tasks from note
+                const taskRegex = /^[\s-]*\[[ xX]\]\s+(.+)$/gm;
+                const matches = [...content.matchAll(taskRegex)];
+
+                for (const match of matches) {
+                    const fullLine = match[0];
+                    const isCompleted = /\[x\]/i.test(fullLine);
+
+                    if (isCompleted) {
+                        // Check if completed recently
+                        const dateMatch = fullLine.match(/✅\s+(\d{4})-(\d{2})-(\d{2})/);
+                        if (dateMatch) {
+                            const taskDate = new Date(dateMatch[1], dateMatch[2] - 1, dateMatch[3]);
+                            const cutoffDate = new Date();
+                            cutoffDate.setDate(cutoffDate.getDate() - 7);
+
+                            if (taskDate >= cutoffDate) {
+                                projectMap.get(link).completed.push(fullLine);
+                            }
                         }
                     } else {
-                        // No folder filter - include all wikilinks from tasks
-                        projectLinks.add(link);
+                        projectMap.get(link).open.push(fullLine);
                     }
                 }
             }
         }
 
-        if (projectLinks.size > 0) {
-            const sorted = Array.from(projectLinks).sort();
-            for (const link of sorted) {
-                lines.push(`- ${link}`);
+        // Format output grouped by project
+        if (projectMap.size > 0) {
+            const sortedProjects = Array.from(projectMap.keys()).sort();
+
+            for (const projectLink of sortedProjects) {
+                const tasks = projectMap.get(projectLink);
+
+                // Only show projects with tasks
+                if (tasks.open.length > 0 || tasks.completed.length > 0) {
+                    lines.push('');
+                    lines.push(`**${projectLink}**`);
+
+                    // Show open tasks
+                    for (const task of tasks.open) {
+                        lines.push(task);
+                    }
+
+                    // Show completed tasks
+                    for (const task of tasks.completed) {
+                        lines.push(task);
+                    }
+                }
             }
-        }
 
-        // If projectFolder specified, also extract tasks directly from project notes
-        let folderTasks = null;
-        if (projectFolder) {
-            folderTasks = await this.extractTasksFromProjectFolder(projectFolder);
+            // Catch-all section for orphaned completed tasks
+            const orphanedCompleted = [];
+            for (const task of completedTasks) {
+                const wikilinks = task.match(/\[\[([^\]]+)\]\]/g);
+                if (!wikilinks || wikilinks.length === 0) {
+                    orphanedCompleted.push(task);
+                }
+            }
 
-            if (folderTasks.activeTasks.length > 0) {
+            if (orphanedCompleted.length > 0) {
                 lines.push('');
-                lines.push('*Active tasks from project notes:*');
-                for (const task of folderTasks.activeTasks.slice(0, 10)) {
+                lines.push('*Other completed items (not linked to specific project notes):*');
+                for (const task of orphanedCompleted) {
                     lines.push(task);
                 }
             }
-        }
-
-        if (projectLinks.size === 0 && (!projectFolder || !folderTasks || folderTasks.activeTasks.length === 0)) {
+        } else {
             lines.push('- *(no active projects this week)*');
         }
 
