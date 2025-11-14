@@ -117,7 +117,28 @@ class TaggingManager {
 
                 // Set PARA location as a property (configurable name)
                 const propertyName = this.settings.tagging.propertyName || 'para';
+                const oldParaLocation = frontmatter[propertyName];
                 frontmatter[propertyName] = paraLocation;
+
+                // Track PARA location history
+                // Only log if location actually changed
+                if (oldParaLocation && oldParaLocation !== paraLocation) {
+                    if (!frontmatter.para_history) {
+                        frontmatter.para_history = [];
+                    }
+
+                    // Add history entry
+                    const historyEntry = {
+                        from: oldParaLocation,
+                        to: paraLocation,
+                        date: new Date().toISOString().split('T')[0],
+                        timestamp: Date.now()
+                    };
+
+                    frontmatter.para_history.push(historyEntry);
+
+                    console.log(`Quick PARA: Logged history for ${file.name}: ${oldParaLocation} → ${paraLocation}`);
+                }
 
                 // Add archived date if moving to archive
                 if (archiveDate && !frontmatter.archived) {

@@ -160,6 +160,83 @@ class DependencyWarningModal extends Modal {
 }
 
 // ============================================================================
+// PARA HISTORY MODAL
+// ============================================================================
+
+class ParaHistoryModal extends Modal {
+    constructor(app, noteName, currentPara, history) {
+        super(app);
+        this.noteName = noteName;
+        this.currentPara = currentPara;
+        this.history = history;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl('h2', { text: `PARA History: ${this.noteName}` });
+
+        contentEl.createEl('p', {
+            text: `Current location: ${this.currentPara}`,
+            cls: 'mod-muted'
+        });
+
+        if (this.history.length === 0) {
+            contentEl.createEl('p', { text: 'No movement history recorded yet.' });
+            return;
+        }
+
+        contentEl.createEl('h3', { text: 'Movement History' });
+
+        const timeline = contentEl.createEl('div', { cls: 'para-history-timeline' });
+
+        // Sort history by timestamp (oldest first)
+        const sortedHistory = [...this.history].sort((a, b) => a.timestamp - b.timestamp);
+
+        sortedHistory.forEach((entry, index) => {
+            const item = timeline.createEl('div', { cls: 'para-history-item' });
+
+            const date = item.createEl('div', { cls: 'para-history-date' });
+            date.setText(entry.date);
+
+            const movement = item.createEl('div', { cls: 'para-history-movement' });
+            movement.createSpan({ text: entry.from, cls: 'para-history-location' });
+            movement.createSpan({ text: ' → ', cls: 'para-history-arrow' });
+            movement.createSpan({ text: entry.to, cls: 'para-history-location' });
+
+            // Add duration if not the last entry
+            if (index < sortedHistory.length - 1) {
+                const nextEntry = sortedHistory[index + 1];
+                const durationMs = nextEntry.timestamp - entry.timestamp;
+                const durationDays = Math.round(durationMs / (1000 * 60 * 60 * 24));
+                item.createEl('div', {
+                    text: `Duration: ${durationDays} days`,
+                    cls: 'para-history-duration'
+                });
+            } else {
+                // For the last entry, show time since then
+                const durationMs = Date.now() - entry.timestamp;
+                const durationDays = Math.round(durationMs / (1000 * 60 * 60 * 24));
+                item.createEl('div', {
+                    text: `${durationDays} days ago`,
+                    cls: 'para-history-duration'
+                });
+            }
+        });
+
+        const buttonContainer = contentEl.createEl('div', { cls: 'modal-button-container' });
+        const closeButton = buttonContainer.createEl('button', { text: 'Close' });
+        closeButton.addEventListener('click', () => this.close());
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// ============================================================================
 // PROJECT UPDATE CONFIGURATION MODAL
 // ============================================================================
 
@@ -2403,6 +2480,31 @@ module.exports = class QuickParaPlugin extends Plugin {
             name: 'Check plugin dependencies',
             callback: async () => {
                 await this.checkDependencies(true);
+            }
+        });
+
+        this.addCommand({
+            id: 'view-para-history',
+            name: 'View PARA history for current note',
+            callback: async () => {
+                const activeFile = this.app.workspace.getActiveFile();
+                if (!activeFile) {
+                    new Notice('No active file');
+                    return;
+                }
+
+                const cache = this.app.metadataCache.getFileCache(activeFile);
+                const paraHistory = cache?.frontmatter?.para_history || [];
+                const currentPara = cache?.frontmatter?.para || 'unknown';
+
+                if (paraHistory.length === 0) {
+                    new Notice(`No PARA history yet for "${activeFile.basename}". Current location: ${currentPara}`);
+                    return;
+                }
+
+                // Show history in a modal
+                const modal = new ParaHistoryModal(this.app, activeFile.basename, currentPara, paraHistory);
+                modal.open();
             }
         });
 
