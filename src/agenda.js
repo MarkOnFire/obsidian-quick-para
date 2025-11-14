@@ -348,12 +348,6 @@ hide edit button
 
 <!-- END AUTO-MANAGED -->
 
-#### 📊 Project Activity Summary
-<!-- AUTO-MANAGED -->
-*Projects sorted by recent activity*
-
-<!-- END AUTO-MANAGED -->
-
 #### 💤 Inactive Projects (30+ days)
 <!-- AUTO-MANAGED -->
 *Projects with no activity for 30+ days - review for archive*
@@ -415,17 +409,13 @@ hide edit button
 
         let sectionBody = match[2];
 
-        // Update Active Projects section
+        // Update Active Projects section (now includes activity sorting)
         const activeProjectsContent = this.formatActiveProjectsSection(kanbanData, projectData);
         sectionBody = this.updateAutoSection(sectionBody, '🎯 Active Projects', activeProjectsContent);
 
         // Update Blocked section
         const blockedContent = this.formatBlockedSection(kanbanData);
         sectionBody = this.updateAutoSection(sectionBody, '🚧 Blocked & Questions', blockedContent);
-
-        // Update Project Activity Summary
-        const activityContent = this.formatActivitySummarySection(projectData);
-        sectionBody = this.updateAutoSection(sectionBody, '📊 Project Activity Summary', activityContent);
 
         // Update Check-In Topics (extract from kanban if available)
         const checkInContent = this.formatCheckInTopicsSection(kanbanData);
@@ -463,10 +453,10 @@ hide edit button
     }
 
     /**
-     * Format the Active Projects section with priority grouping
+     * Format the Active Projects section sorted by activity
      */
     formatActiveProjectsSection(kanbanData, projectData) {
-        const lines = ['*Auto-updated from Project Dashboard kanban board*', ''];
+        const lines = ['*Auto-updated from Project Dashboard - sorted by activity*', ''];
 
         // Combine active work sections
         const activeTasks = [
@@ -479,57 +469,54 @@ hide edit button
         // Extract all active project names
         const activeProjectNames = this.extractProjectNames(activeTasks);
 
-        // Group by priority prefix
-        const groups = {
-            lead: [],
-            digital: [],
-            edu: [],
-            other: []
-        };
-
-        for (const projectName of activeProjectNames) {
-            const upperName = projectName.toUpperCase();
-            const status = this.getProjectStatus(projectName, kanbanData);
-            const entry = `- [[${projectName}]] (${status})`;
-
-            if (upperName.startsWith('LEAD —')) {
-                groups.lead.push(entry);
-            } else if (upperName.startsWith('DIGITAL —')) {
-                groups.digital.push(entry);
-            } else if (upperName.startsWith('EDU —')) {
-                groups.edu.push(entry);
-            } else {
-                groups.other.push(entry);
-            }
-        }
-
-        // Output grouped projects
-        if (groups.lead.length > 0) {
-            lines.push('**Lead Priority**');
-            lines.push(...groups.lead);
-            lines.push('');
-        }
-
-        if (groups.digital.length > 0) {
-            lines.push('**Digital Priority**');
-            lines.push(...groups.digital);
-            lines.push('');
-        }
-
-        if (groups.edu.length > 0) {
-            lines.push('**Education Priority**');
-            lines.push(...groups.edu);
-            lines.push('');
-        }
-
-        if (groups.other.length > 0) {
-            lines.push('**Other Projects**');
-            lines.push(...groups.other);
-            lines.push('');
-        }
-
         if (activeProjectNames.length === 0) {
             lines.push('*(no active projects this week)*');
+            return lines.join('\n');
+        }
+
+        // Build project info array with activity stats
+        const projects = [];
+        for (const projectName of activeProjectNames) {
+            const stats = projectData.activity.get(projectName) || { completed: 0, active: 0 };
+            const status = this.getProjectStatus(projectName, kanbanData);
+
+            projects.push({
+                name: projectName,
+                completed: stats.completed,
+                active: stats.active,
+                status: status
+            });
+        }
+
+        // Sort by activity (completed tasks descending, then active tasks descending)
+        projects.sort((a, b) => {
+            if (b.completed !== a.completed) {
+                return b.completed - a.completed;
+            }
+            return b.active - a.active;
+        });
+
+        // Top 10 most active - detailed format
+        const top10 = projects.slice(0, 10);
+        if (top10.length > 0) {
+            lines.push('**Top Active Projects**');
+            for (const proj of top10) {
+                const statusPart = proj.status ? ` (${proj.status})` : '';
+                lines.push(`- [[${proj.name}]] - ${proj.completed} completed, ${proj.active} active${statusPart}`);
+            }
+            lines.push('');
+        }
+
+        // Remaining projects - concise single-line format
+        const remaining = projects.slice(10);
+        if (remaining.length > 0) {
+            lines.push('**Other Active Projects**');
+            const summaries = remaining.map(proj => {
+                const completedInfo = proj.completed > 0 ? `${proj.completed} completed` : 'no completions';
+                return `- [[${proj.name}]] (${completedInfo})`;
+            });
+            lines.push(summaries.join(', '));
+            lines.push('');
         }
 
         return lines.join('\n');
@@ -549,58 +536,6 @@ hide edit button
             }
         } else {
             lines.push('- *(none)*');
-        }
-
-        return lines.join('\n');
-    }
-
-    /**
-     * Format the Project Activity Summary section
-     */
-    formatActivitySummarySection(projectData) {
-        const lines = ['*Projects sorted by recent activity*', ''];
-
-        // Group projects by activity level
-        const high = [];    // 5+ completions
-        const moderate = []; // 1-4 completions
-        const low = [];      // 0 completions
-
-        for (const [projectName, stats] of projectData.activity) {
-            const activity = stats.completed;
-            const active = stats.active;
-
-            const entry = `- [[${projectName}]] - ${stats.completed} tasks completed, ${stats.active} active`;
-
-            if (activity >= 5) {
-                high.push(entry);
-            } else if (activity >= 1) {
-                moderate.push(entry);
-            } else if (active > 0) {
-                low.push(entry);
-            }
-        }
-
-        // Output grouped by activity
-        if (high.length > 0) {
-            lines.push('**High Activity** (5+ tasks completed this week)');
-            lines.push(...high);
-            lines.push('');
-        }
-
-        if (moderate.length > 0) {
-            lines.push('**Moderate Activity** (1-4 tasks completed)');
-            lines.push(...moderate);
-            lines.push('');
-        }
-
-        if (low.length > 0) {
-            lines.push('**Low Activity** (no completions this week)');
-            lines.push(...low.slice(0, 5)); // Limit low activity to 5
-            lines.push('');
-        }
-
-        if (high.length === 0 && moderate.length === 0 && low.length === 0) {
-            lines.push('*(no project activity tracked)*');
         }
 
         return lines.join('\n');

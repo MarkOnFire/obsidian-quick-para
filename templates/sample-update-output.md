@@ -21,19 +21,17 @@ hide edit button
 
 #### 🎯 Active Projects
 <!-- AUTO-MANAGED -->
-*Auto-updated from Project Dashboard kanban board*
+*Auto-updated from Project Dashboard - sorted by activity*
 
-**Lead Priority**
-- [[LEAD — Bucky!]] (Doing) - Landing page development
-- [[LEAD — Wisconsin Life]] (This Week) - Thumbnails and midshow copy
+**Top Active Projects**
+- [[LEAD — Bucky!]] - 7 completed, 12 active (Doing)
+- [[DIGITAL — Current Tickets]] - 6 completed, 18 active (Today)
+- [[LEAD — Wisconsin Life]] - 2 completed, 4 active (This Week)
+- [[EDU — Interactive lesson]] - 2 completed, 1 active (This Week)
+- [[EDU — copyright flags for PBS MCN]] - 1 completed, 3 active (Doing)
 
-**Digital Priority**
-- [[DIGITAL — Current Tickets]] (Today) - Multiple deliverables this week
-- [[DIGITAL — Template for checklist]] (This Week) - Integration feedback
-
-**Education Priority**
-- [[EDU — Interactive lesson]] (This Week) - Awaiting corrections
-- [[EDU — copyright flags for PBS MCN]] (Doing) - Organizing remaining flags
+**Other Active Projects**
+- [[DIGITAL — Template for checklist]] (no completions), [[LEAD — The Look Back]] (no completions), [[LEAD — UPlace]] (no completions)
 
 <!-- END AUTO-MANAGED -->
 
@@ -91,24 +89,6 @@ due before in 7 days
 sort by due
 hide edit button
 ```
-
-<!-- END AUTO-MANAGED -->
-
-#### 📊 Project Activity Summary
-<!-- AUTO-MANAGED -->
-*Projects sorted by recent activity*
-
-**High Activity** (5+ tasks completed this week)
-- [[LEAD — Bucky!]] - 7 tasks completed, 12 active
-- [[DIGITAL — Current Tickets]] - 6 tasks completed, 18 active
-
-**Moderate Activity** (1-4 tasks completed)
-- [[LEAD — Wisconsin Life]] - 2 tasks completed, 4 active
-- [[EDU — Interactive lesson]] - 2 tasks completed, 1 active
-
-**Low Activity** (no completions this week)
-- [[LEAD — The Look Back]] - 0 completed, 3 active
-- [[LEAD — UPlace]] - 0 completed, 5 active
 
 <!-- END AUTO-MANAGED -->
 
@@ -331,13 +311,13 @@ hide edit button
 
 **Key Improvements in This Template:**
 
-1. **Concise Active Projects** - Shows projects with brief status, not full task dumps
+1. **Activity-Based Project Sorting** - Top 10 most active projects (by completed tasks) shown with full details, remaining projects in concise one-line format
 2. **Smart Task Queries** - Dynamic Tasks plugin queries filter to:
    - Recently completed (last 7 days)
    - High priority or due soon (next 7 days)
    - Daily duties coming up
    - Inactive projects for review
-3. **Activity-Based Sorting** - Projects grouped by completion activity level
+3. **Universal Approach** - No assumptions about naming conventions or prefixes, works for any project structure
 4. **Inactive Project Digest** - Auto-identifies projects untouched for 30+ days
 5. **Preserved Manual Sections** - Feedback, action items, and notes remain user-editable
 
