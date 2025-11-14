@@ -37,6 +37,34 @@ class AgendaManager {
     }
 
     /**
+     * Format a date as YYYY-MM-DD
+     */
+    formatDateISO(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    /**
+     * Get a date N days ago in YYYY-MM-DD format
+     */
+    getDateDaysAgo(days) {
+        const date = new Date();
+        date.setDate(date.getDate() - days);
+        return this.formatDateISO(date);
+    }
+
+    /**
+     * Get a date N days from now in YYYY-MM-DD format
+     */
+    getDateDaysAhead(days) {
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        return this.formatDateISO(date);
+    }
+
+    /**
      * Parse the Project Dashboard kanban board
      * Returns sections: done, doing, today, tomorrow, this_week, blocked
      */
@@ -103,6 +131,106 @@ class AgendaManager {
     }
 
     /**
+     * Scan project folder to analyze activity
+     * Returns project activity data
+     */
+    async analyzeProjectActivity() {
+        const pbswiPath = this.settings.agendaGeneration.pbswiFolder;
+        const projectData = {
+            byPrefix: {
+                lead: [],
+                digital: [],
+                edu: [],
+                archive: [],
+                other: []
+            },
+            activity: new Map() // projectName -> { completed: count, active: count }
+        };
+
+        // Get all markdown files in PBSWI folder
+        const files = this.app.vault.getMarkdownFiles()
+            .filter(f => f.path.startsWith(pbswiPath + '/') && !f.path.includes('/'));
+
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        for (const file of files) {
+            const projectName = file.basename;
+            const content = await this.app.vault.read(file);
+
+            // Count completed tasks in last 7 days
+            let completedCount = 0;
+            let activeCount = 0;
+
+            const lines = content.split('\n');
+            for (const line of lines) {
+                // Completed tasks with date
+                const completedMatch = line.match(/^-\s+\[x\].*?✅\s+(\d{4})-(\d{2})-(\d{2})/i);
+                if (completedMatch) {
+                    const taskDate = new Date(completedMatch[1], completedMatch[2] - 1, completedMatch[3]);
+                    if (taskDate >= sevenDaysAgo) {
+                        completedCount++;
+                    }
+                }
+
+                // Active (not done) tasks
+                if (/^-\s+\[ \]/i.test(line)) {
+                    activeCount++;
+                }
+            }
+
+            projectData.activity.set(projectName, { completed: completedCount, active: activeCount });
+
+            // Categorize by prefix
+            const upperName = projectName.toUpperCase();
+            if (upperName.startsWith('LEAD —') || upperName.startsWith('LEAD —')) {
+                projectData.byPrefix.lead.push(projectName);
+            } else if (upperName.startsWith('DIGITAL —')) {
+                projectData.byPrefix.digital.push(projectName);
+            } else if (upperName.startsWith('EDU —')) {
+                projectData.byPrefix.edu.push(projectName);
+            } else if (upperName.startsWith('ARCHIVE —')) {
+                projectData.byPrefix.archive.push(projectName);
+            } else {
+                projectData.byPrefix.other.push(projectName);
+            }
+        }
+
+        return projectData;
+    }
+
+    /**
+     * Extract project names from kanban tasks
+     */
+    extractProjectNames(tasks) {
+        const projects = new Set();
+        for (const task of tasks) {
+            const wikilinks = task.match(/\[\[([^\]]+)\]\]/g);
+            if (wikilinks) {
+                for (const link of wikilinks) {
+                    const projectName = link.slice(2, -2);
+                    projects.add(projectName);
+                }
+            }
+        }
+        return Array.from(projects);
+    }
+
+    /**
+     * Get kanban status for a project
+     */
+    getProjectStatus(projectName, kanbanData) {
+        const projectLink = `[[${projectName}]]`;
+
+        if (kanbanData.doing.some(t => t.includes(projectLink))) return 'Doing';
+        if (kanbanData.today.some(t => t.includes(projectLink))) return 'Today';
+        if (kanbanData.tomorrow.some(t => t.includes(projectLink))) return 'Tomorrow';
+        if (kanbanData.this_week.some(t => t.includes(projectLink))) return 'This Week';
+
+        return null;
+    }
+
+    /**
      * Update the Weekly 1-on-1 agenda with data from kanban board
      */
     async updateWeeklyAgenda() {
@@ -111,6 +239,9 @@ class AgendaManager {
 
             // Parse kanban board
             const kanbanData = await this.parseKanbanBoard();
+
+            // Analyze project activity
+            const projectData = await this.analyzeProjectActivity();
 
             // Get next Monday date
             const mondayDate = this.getNextMondayDate();
@@ -138,7 +269,7 @@ class AgendaManager {
             }
 
             // Update the Monday section with kanban data
-            updatedContent = this.updateMondaySection(updatedContent, mondayDate, kanbanData);
+            updatedContent = this.updateMondaySection(updatedContent, mondayDate, kanbanData, projectData);
 
             // Write back to file
             await this.app.vault.modify(file, updatedContent);
@@ -154,28 +285,100 @@ class AgendaManager {
      * Create a new Monday section in the agenda
      */
     createMondaySection(content, mondayDate) {
+        const pbswiPath = this.settings.agendaGeneration.pbswiFolder;
+        const sevenDaysAgo = this.getDateDaysAgo(7);
+        const sevenDaysAhead = this.getDateDaysAhead(7);
+        const thirtyDaysAgo = this.getDateDaysAgo(30);
+
         const newSection = `### ${mondayDate}
 
-#### Projects
+#### 🎯 Active Projects
 <!-- AUTO-MANAGED -->
-*Auto-updated from Project Dashboard*
+*Auto-updated from Project Dashboard kanban board*
 
 <!-- END AUTO-MANAGED -->
 
-#### Blocked/feedback needed
+#### 📈 This Week's Progress
+<!-- AUTO-MANAGED -->
+*Recently completed tasks (last 7 days)*
+
+\`\`\`tasks
+path includes ${pbswiPath}
+done after ${sevenDaysAgo}
+sort by done reverse
+limit 15
+hide edit button
+\`\`\`
+
+<!-- END AUTO-MANAGED -->
+
+#### ⚡ Priority Tasks This Week
+<!-- AUTO-MANAGED -->
+*High-priority and due-soon tasks*
+
+\`\`\`tasks
+path includes ${pbswiPath}
+not done
+((priority is above medium) OR (due before ${sevenDaysAhead}))
+NOT (path includes ARCHIVE)
+sort by priority, due
+limit 20
+hide edit button
+\`\`\`
+
+<!-- END AUTO-MANAGED -->
+
+#### 🚧 Blocked & Questions
 <!-- AUTO-MANAGED -->
 *Auto-updated from Project Dashboard "Blocked" section*
 
 <!-- END AUTO-MANAGED -->
 
-#### Daily Highlights (This Week)
+#### 📅 Regular Recurring Tasks
 <!-- AUTO-MANAGED -->
-*Completed tasks from Project Dashboard "Done" section*
+*Daily/weekly routine tasks due in next 7 days*
+
+\`\`\`tasks
+path includes ${pbswiPath}/Daily Duties
+not done
+due before ${sevenDaysAhead}
+sort by due
+hide edit button
+\`\`\`
 
 <!-- END AUTO-MANAGED -->
 
-#### Feedback/updates/notes from Tim
-  * *(add Tim's feedback here after the meeting)*
+#### 📊 Project Activity Summary
+<!-- AUTO-MANAGED -->
+*Projects sorted by recent activity*
+
+<!-- END AUTO-MANAGED -->
+
+#### 💤 Inactive Projects (30+ days)
+<!-- AUTO-MANAGED -->
+*Projects with no activity for 30+ days - review for archive*
+
+\`\`\`tasks
+path includes ${pbswiPath}/ARCHIVE
+OR (path includes ${pbswiPath}) AND (done before ${thirtyDaysAgo})
+group by filename
+limit groups 5
+limit 3
+hide edit button
+\`\`\`
+
+**Note**: Full project list available in [[Project Dashboard]]. Projects shown above have had no completed tasks since ${thirtyDaysAgo}.
+
+<!-- END AUTO-MANAGED -->
+
+#### 🗓️ Check-In Topics
+<!-- AUTO-MANAGED -->
+*Meeting notes and discussion topics*
+
+<!-- END AUTO-MANAGED -->
+
+#### 💬 Feedback/updates/notes from meeting
+  * *(add any notes and action items here after the meeting)*
 
 ---
 
@@ -197,7 +400,7 @@ class AgendaManager {
     /**
      * Update the Monday section with kanban data
      */
-    updateMondaySection(content, mondayDate, kanbanData) {
+    updateMondaySection(content, mondayDate, kanbanData, projectData) {
         // Find the Monday section
         const sectionPattern = new RegExp(
             `(### ${this.escapeRegex(mondayDate)}\\s*\\n)(.*?)(?=\\n### |\\n---|\\Z)`,
@@ -212,17 +415,24 @@ class AgendaManager {
 
         let sectionBody = match[2];
 
-        // Update Projects section
-        const projectsContent = this.formatProjectsSection(kanbanData);
-        sectionBody = this.updateAutoSection(sectionBody, 'Projects', projectsContent);
+        // Update Active Projects section
+        const activeProjectsContent = this.formatActiveProjectsSection(kanbanData, projectData);
+        sectionBody = this.updateAutoSection(sectionBody, '🎯 Active Projects', activeProjectsContent);
 
         // Update Blocked section
         const blockedContent = this.formatBlockedSection(kanbanData);
-        sectionBody = this.updateAutoSection(sectionBody, 'Blocked/feedback needed', blockedContent);
+        sectionBody = this.updateAutoSection(sectionBody, '🚧 Blocked & Questions', blockedContent);
 
-        // Update Highlights section
-        const highlightsContent = this.formatHighlightsSection(kanbanData);
-        sectionBody = this.updateAutoSection(sectionBody, 'Daily Highlights \\(This Week\\)', highlightsContent);
+        // Update Project Activity Summary
+        const activityContent = this.formatActivitySummarySection(projectData);
+        sectionBody = this.updateAutoSection(sectionBody, '📊 Project Activity Summary', activityContent);
+
+        // Update Check-In Topics (extract from kanban if available)
+        const checkInContent = this.formatCheckInTopicsSection(kanbanData);
+        sectionBody = this.updateAutoSection(sectionBody, '🗓️ Check-In Topics', checkInContent);
+
+        // Note: Tasks query sections (Progress, Priority Tasks, Recurring, Inactive)
+        // are embedded in the template and auto-update via Tasks plugin
 
         // Reconstruct content
         return content.slice(0, match.index) + match[1] + sectionBody + content.slice(match.index + match[0].length);
@@ -233,7 +443,7 @@ class AgendaManager {
      */
     updateAutoSection(body, sectionName, newContent) {
         const pattern = new RegExp(
-            `(####\\s+${sectionName}\\s*\\n)(.*?)(<!--\\s*AUTO-MANAGED\\s*-->)(.*?)(<!--\\s*END AUTO-MANAGED\\s*-->)`,
+            `(####\\s+${this.escapeRegex(sectionName)}\\s*\\n)(.*?)(<!--\\s*AUTO-MANAGED\\s*-->)(.*?)(<!--\\s*END AUTO-MANAGED\\s*-->)`,
             's'
         );
         const match = body.match(pattern);
@@ -253,10 +463,10 @@ class AgendaManager {
     }
 
     /**
-     * Format the Projects section content
+     * Format the Active Projects section with priority grouping
      */
-    formatProjectsSection(kanbanData) {
-        const lines = ['*Auto-updated from Project Dashboard*', ''];
+    formatActiveProjectsSection(kanbanData, projectData) {
+        const lines = ['*Auto-updated from Project Dashboard kanban board*', ''];
 
         // Combine active work sections
         const activeTasks = [
@@ -266,32 +476,60 @@ class AgendaManager {
             ...kanbanData.this_week
         ];
 
-        // Extract unique PBSWI project wikilinks
-        const projectLinks = new Set();
-        const pbswiPath = this.settings.agendaGeneration.pbswiFolder;
+        // Extract all active project names
+        const activeProjectNames = this.extractProjectNames(activeTasks);
 
-        for (const task of activeTasks) {
-            const wikilinks = task.match(/\[\[([^\]]+)\]\]/g);
-            if (wikilinks) {
-                for (const link of wikilinks) {
-                    const projectName = link.slice(2, -2);
-                    // Check if project exists in PBSWI folder
-                    const projectFile = this.app.vault.getAbstractFileByPath(`${pbswiPath}/${projectName}.md`);
-                    if (projectFile) {
-                        projectLinks.add(link);
-                    }
-                }
+        // Group by priority prefix
+        const groups = {
+            lead: [],
+            digital: [],
+            edu: [],
+            other: []
+        };
+
+        for (const projectName of activeProjectNames) {
+            const upperName = projectName.toUpperCase();
+            const status = this.getProjectStatus(projectName, kanbanData);
+            const entry = `- [[${projectName}]] (${status})`;
+
+            if (upperName.startsWith('LEAD —')) {
+                groups.lead.push(entry);
+            } else if (upperName.startsWith('DIGITAL —')) {
+                groups.digital.push(entry);
+            } else if (upperName.startsWith('EDU —')) {
+                groups.edu.push(entry);
+            } else {
+                groups.other.push(entry);
             }
         }
 
-        if (projectLinks.size > 0) {
-            const sorted = Array.from(projectLinks).sort();
-            for (const link of sorted) {
-                lines.push(`  * ${link}`);
-                // TODO: Extract completed tasks from project note
-            }
-        } else {
-            lines.push('  * *(no PBSWI projects this week)*');
+        // Output grouped projects
+        if (groups.lead.length > 0) {
+            lines.push('**Lead Priority**');
+            lines.push(...groups.lead);
+            lines.push('');
+        }
+
+        if (groups.digital.length > 0) {
+            lines.push('**Digital Priority**');
+            lines.push(...groups.digital);
+            lines.push('');
+        }
+
+        if (groups.edu.length > 0) {
+            lines.push('**Education Priority**');
+            lines.push(...groups.edu);
+            lines.push('');
+        }
+
+        if (groups.other.length > 0) {
+            lines.push('**Other Projects**');
+            lines.push(...groups.other);
+            lines.push('');
+        }
+
+        if (activeProjectNames.length === 0) {
+            lines.push('*(no active projects this week)*');
         }
 
         return lines.join('\n');
@@ -317,22 +555,68 @@ class AgendaManager {
     }
 
     /**
-     * Format the Highlights section content
+     * Format the Project Activity Summary section
      */
-    formatHighlightsSection(kanbanData) {
-        const lines = ['*Completed tasks from Project Dashboard "Done" section*', ''];
+    formatActivitySummarySection(projectData) {
+        const lines = ['*Projects sorted by recent activity*', ''];
 
-        if (kanbanData.done.length > 0) {
-            // Get tasks from last 7 days
-            const recentTasks = this.filterRecentTasks(kanbanData.done, 7);
-            if (recentTasks.length > 0) {
-                lines.push(...recentTasks.slice(0, 10));
-            } else {
-                lines.push('- *(no completed tasks this week)*');
+        // Group projects by activity level
+        const high = [];    // 5+ completions
+        const moderate = []; // 1-4 completions
+        const low = [];      // 0 completions
+
+        for (const [projectName, stats] of projectData.activity) {
+            const activity = stats.completed;
+            const active = stats.active;
+
+            const entry = `- [[${projectName}]] - ${stats.completed} tasks completed, ${stats.active} active`;
+
+            if (activity >= 5) {
+                high.push(entry);
+            } else if (activity >= 1) {
+                moderate.push(entry);
+            } else if (active > 0) {
+                low.push(entry);
             }
-        } else {
-            lines.push('- *(no completed tasks this week)*');
         }
+
+        // Output grouped by activity
+        if (high.length > 0) {
+            lines.push('**High Activity** (5+ tasks completed this week)');
+            lines.push(...high);
+            lines.push('');
+        }
+
+        if (moderate.length > 0) {
+            lines.push('**Moderate Activity** (1-4 tasks completed)');
+            lines.push(...moderate);
+            lines.push('');
+        }
+
+        if (low.length > 0) {
+            lines.push('**Low Activity** (no completions this week)');
+            lines.push(...low.slice(0, 5)); // Limit low activity to 5
+            lines.push('');
+        }
+
+        if (high.length === 0 && moderate.length === 0 && low.length === 0) {
+            lines.push('*(no project activity tracked)*');
+        }
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Format the Check-In Topics section
+     */
+    formatCheckInTopicsSection(kanbanData) {
+        const lines = ['*Meeting notes and discussion topics*', ''];
+
+        // This section is primarily manual, but we can extract some topics
+        // from project names or kanban items if needed
+
+        // For now, leave it mostly empty for manual entry
+        lines.push('*(Add discussion topics here before the meeting)*');
 
         return lines.join('\n');
     }
