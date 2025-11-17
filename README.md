@@ -125,6 +125,22 @@ Content between `<!-- AUTO-MANAGED -->` tags is updated automatically. Content o
 ### Optional
 - **Kanban**: For Project Dashboard board (recommended)
 
+## Development & Build
+
+Source code now lives under `src/` and is bundled with esbuild before distributing to a vault.
+
+```bash
+# Inside custom-extensions/plugins/quick-para
+npm install            # first run only (requires network)
+npm run build          # bundles src/index.js into main.js
+rsync -a --delete \
+  --exclude 'node_modules' \
+  --exclude 'src' \
+  . "/Users/you/Library/Mobile Documents/iCloud~md~obsidian/Documents/<Vault>/.obsidian/plugins/quick-para/"
+```
+
+Use `npm run dev` for a watch build during iteractive development. The checked-in `main.js` is just a stub (`module.exports = require("./src/index.js")`) so dev vaults can keep running from source; `npm run build` replaces it with the distributable single-file bundle expected by Obsidian’s plugin loader.
+
 ## Configuration
 
 ### Default PARA Folder Structure
