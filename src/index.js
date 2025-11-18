@@ -14,11 +14,6 @@ const DEFAULT_SETTINGS = {
         resources: "3 - RESOURCES",
         archive: "4 - ARCHIVE"
     },
-    projectUpdates: {
-        enabled: false,  // Disabled by default
-        kanbanFile: "0 - INBOX/Project Dashboard.md",
-        configs: []      // User configures specific project folders
-    },
     templates: {
         autoDeployOnSetup: true,
         backupBeforeOverwrite: true
@@ -51,11 +46,6 @@ class DependencyManager {
                 name: 'Tasks',
                 description: 'Required for task management',
                 url: 'https://github.com/obsidian-tasks-group/obsidian-tasks'
-            },
-            'obsidian-kanban': {
-                name: 'Kanban',
-                description: 'Required for Project Dashboard and project updates',
-                url: 'https://github.com/mgmeyers/obsidian-kanban'
             }
         };
 
@@ -158,191 +148,6 @@ class DependencyWarningModal extends Modal {
         const buttonContainer = contentEl.createEl('div', { cls: 'modal-button-container' });
         const closeButton = buttonContainer.createEl('button', { text: 'Close' });
         closeButton.addEventListener('click', () => this.close());
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
-}
-
-// ============================================================================
-// PROJECT UPDATE CONFIGURATION MODAL
-// ============================================================================
-
-class ProjectUpdateConfigModal extends Modal {
-    constructor(app, plugin, existingConfig = null, onSave) {
-        super(app);
-        this.plugin = plugin;
-        this.existingConfig = existingConfig;
-        this.onSave = onSave;
-
-        // Initialize with existing config or defaults
-        this.config = existingConfig ? { ...existingConfig } : {
-            name: '',
-            projectFolder: '',
-            schedule: 'weekly',
-            dayOfWeek: 'Monday',
-            timeOfDay: '09:00',
-            enabled: true
-        };
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-
-        contentEl.createEl('h2', {
-            text: this.existingConfig ? 'Edit Project Update' : 'Add Project Update'
-        });
-
-        contentEl.createEl('p', {
-            text: 'Configure automatic status report generation for a project folder. Reports will be created in your Inbox with the format "UPDATE — [Project Name].md".',
-            cls: 'setting-item-description'
-        });
-
-        // Project Name
-        new Setting(contentEl)
-            .setName('Project Name')
-            .setDesc('Display name for this project update (e.g., "PBSWI", "Personal Projects")')
-            .addText(text => text
-                .setPlaceholder('Project Name')
-                .setValue(this.config.name)
-                .onChange(value => {
-                    this.config.name = value.trim();
-                }));
-
-        // Project Folder
-        const folderSetting = new Setting(contentEl)
-            .setName('Project Folder Path')
-            .setDesc('Path to the project folder to track (e.g., "1 - PROJECTS/PBSWI")');
-
-        // Create text input with folder suggestions
-        const folderInput = folderSetting.controlEl.createEl('input', {
-            type: 'text',
-            placeholder: '1 - PROJECTS/Subfolder',
-            value: this.config.projectFolder
-        });
-        folderInput.addClass('folder-suggest-input');
-        folderInput.style.width = '100%';
-
-        // Get all folders in vault
-        const folders = this.app.vault.getAllLoadedFiles()
-            .filter(f => f.children !== undefined)
-            .map(f => f.path)
-            .sort();
-
-        // Add datalist for autocomplete
-        const datalistId = 'folder-suggest-' + Math.random().toString(36).substr(2, 9);
-        const datalist = contentEl.createEl('datalist', { attr: { id: datalistId } });
-        folders.forEach(folder => {
-            datalist.createEl('option', { value: folder });
-        });
-        folderInput.setAttribute('list', datalistId);
-
-        // Update config on change
-        folderInput.addEventListener('input', (e) => {
-            this.config.projectFolder = e.target.value.trim();
-        });
-
-        // Schedule Frequency
-        new Setting(contentEl)
-            .setName('Update Frequency')
-            .setDesc('How often to generate project updates')
-            .addDropdown(dropdown => dropdown
-                .addOption('daily', 'Daily')
-                .addOption('weekly', 'Weekly')
-                .addOption('monthly', 'Monthly')
-                .setValue(this.config.schedule)
-                .onChange(value => {
-                    this.config.schedule = value;
-                }));
-
-        // Day of Week (only for weekly)
-        const dayOfWeekSetting = new Setting(contentEl)
-            .setName('Day of Week')
-            .setDesc('Which day to generate the weekly update')
-            .addDropdown(dropdown => dropdown
-                .addOption('Monday', 'Monday')
-                .addOption('Tuesday', 'Tuesday')
-                .addOption('Wednesday', 'Wednesday')
-                .addOption('Thursday', 'Thursday')
-                .addOption('Friday', 'Friday')
-                .addOption('Saturday', 'Saturday')
-                .addOption('Sunday', 'Sunday')
-                .setValue(this.config.dayOfWeek || 'Monday')
-                .onChange(value => {
-                    this.config.dayOfWeek = value;
-                }));
-
-        // Show/hide day of week based on schedule
-        dayOfWeekSetting.settingEl.style.display = this.config.schedule === 'weekly' ? '' : 'none';
-
-        // Time of Day
-        new Setting(contentEl)
-            .setName('Time of Day')
-            .setDesc('What time to generate the update (24-hour format)')
-            .addText(text => text
-                .setPlaceholder('09:00')
-                .setValue(this.config.timeOfDay || '09:00')
-                .onChange(value => {
-                    this.config.timeOfDay = value.trim();
-                })
-                .inputEl.setAttribute('type', 'time'));
-
-        // Enable/Disable
-        new Setting(contentEl)
-            .setName('Enabled')
-            .setDesc('Turn this project update on or off')
-            .addToggle(toggle => toggle
-                .setValue(this.config.enabled)
-                .onChange(value => {
-                    this.config.enabled = value;
-                }));
-
-        // Buttons
-        const buttonContainer = contentEl.createEl('div', { cls: 'modal-button-container' });
-
-        const saveButton = buttonContainer.createEl('button', {
-            text: 'Save',
-            cls: 'mod-cta'
-        });
-        saveButton.addEventListener('click', () => {
-            if (this.validateConfig()) {
-                this.onSave(this.config);
-                this.close();
-            }
-        });
-
-        const cancelButton = buttonContainer.createEl('button', { text: 'Cancel' });
-        cancelButton.addEventListener('click', () => this.close());
-    }
-
-    validateConfig() {
-        if (!this.config.name) {
-            new Notice('Please enter a project name');
-            return false;
-        }
-
-        if (!this.config.projectFolder) {
-            new Notice('Please enter a project folder path');
-            return false;
-        }
-
-        // Check if folder exists
-        const folder = this.app.vault.getAbstractFileByPath(this.config.projectFolder);
-        if (!folder) {
-            new Notice(`Folder not found: ${this.config.projectFolder}. Please create it first or check the path.`, 5000);
-            return false;
-        }
-
-        // Validate time format
-        if (this.config.timeOfDay && !/^\d{2}:\d{2}$/.test(this.config.timeOfDay)) {
-            new Notice('Please enter a valid time in HH:MM format (e.g., 09:00)');
-            return false;
-        }
-
-        return true;
     }
 
     onClose() {
@@ -1972,6 +1777,214 @@ class AgendaManager {
 }
 
 // ============================================================================
+// TASK MANAGER
+// ============================================================================
+
+class TaskManager {
+    constructor(app, settings, profiler) {
+        this.app = app;
+        this.settings = settings;
+        this.profiler = profiler;
+    }
+
+    /**
+     * Cancel all open tasks in a file by replacing checkboxes
+     * Converts: - [ ] task -> - [-] task
+     * Also handles: * [ ] task and + [ ] task
+     */
+    async cancelTasksInFile(file) {
+        if (!file) return { modified: false, taskCount: 0 };
+
+        const handle = this.profiler?.start('tasks:cancel-file');
+
+        try {
+            const content = await this.app.vault.read(file);
+            const lines = content.split('\n');
+            let modified = false;
+            let taskCount = 0;
+
+            const newLines = lines.map(line => {
+                // Match task lines with open checkboxes: - [ ], * [ ], or + [ ]
+                // Regex explanation:
+                // ^(\s*)      - Start of line, capture leading whitespace
+                // ([-*+])     - Capture list marker
+                // \s+         - One or more spaces after marker
+                // \[          - Opening bracket (escaped)
+                // \s          - Space inside checkbox
+                // \]          - Closing bracket (escaped)
+                // (.*)        - Capture everything after checkbox (including empty)
+                const taskMatch = line.match(/^(\s*)([-*+])\s+\[\s\](.*)/);
+
+                if (taskMatch) {
+                    taskCount++;
+                    modified = true;
+                    const [, indent, marker, taskText] = taskMatch;
+                    // Return cancelled task format
+                    // taskText already includes any leading/trailing spaces
+                    return `${indent}${marker} [-]${taskText}`;
+                }
+
+                return line;
+            });
+
+            if (modified) {
+                await this.app.vault.modify(file, newLines.join('\n'));
+            }
+
+            this.profiler?.end(handle, { file: file.name, taskCount, modified });
+
+            return { modified, taskCount };
+        } catch (error) {
+            console.error(`Quick PARA: Error cancelling tasks in ${file.name}:`, error);
+            this.profiler?.end(handle);
+            return { modified: false, taskCount: 0, error };
+        }
+    }
+
+    /**
+     * Cancel all open tasks in Archive folder
+     */
+    async cancelArchiveTasks() {
+        const handle = this.profiler?.start('tasks:cancel-archive');
+        const archiveFolderPath = this.settings.paraFolders?.archive || '4 - ARCHIVE';
+
+        // Get all markdown files in the archive folder
+        const allFiles = this.app.vault.getMarkdownFiles();
+        const archiveFiles = allFiles.filter(file =>
+            file.path.startsWith(archiveFolderPath + '/') || file.path === archiveFolderPath
+        );
+
+        if (archiveFiles.length === 0) {
+            new Notice(`No files found in ${archiveFolderPath}`);
+            this.profiler?.end(handle);
+            return;
+        }
+
+        new Notice(`Scanning ${archiveFiles.length} files in Archive...`);
+
+        let filesModified = 0;
+        let totalTasksCancelled = 0;
+        const errors = [];
+
+        for (const file of archiveFiles) {
+            const result = await this.cancelTasksInFile(file);
+
+            if (result.error) {
+                errors.push({ file: file.name, error: result.error });
+            } else if (result.modified) {
+                filesModified++;
+                totalTasksCancelled += result.taskCount;
+            }
+        }
+
+        // Show summary
+        if (errors.length > 0) {
+            new Notice(
+                `Completed with errors: ${filesModified} files updated, ` +
+                `${totalTasksCancelled} tasks cancelled, ${errors.length} errors`
+            );
+            console.error('Quick PARA: Errors during task cancellation:', errors);
+        } else {
+            new Notice(
+                `Archive tasks cancelled: ${totalTasksCancelled} tasks in ${filesModified} files`
+            );
+        }
+
+        this.profiler?.end(handle, {
+            archiveFiles: archiveFiles.length,
+            filesModified,
+            totalTasksCancelled,
+            errors: errors.length
+        });
+
+        console.log(`Quick PARA: Archive task cancellation complete - ${filesModified} files, ${totalTasksCancelled} tasks`);
+    }
+
+    /**
+     * Cancel all open tasks in current file
+     */
+    async cancelCurrentFileTasks() {
+        const handle = this.profiler?.start('tasks:cancel-current');
+        const file = this.app.workspace.getActiveFile();
+
+        if (!file) {
+            new Notice('No active file');
+            this.profiler?.end(handle);
+            return;
+        }
+
+        const result = await this.cancelTasksInFile(file);
+
+        if (result.error) {
+            new Notice(`Error cancelling tasks: ${result.error.message}`);
+        } else if (result.modified) {
+            new Notice(`Cancelled ${result.taskCount} tasks in ${file.name}`);
+        } else {
+            new Notice('No open tasks found in current file');
+        }
+
+        this.profiler?.end(handle);
+    }
+
+    /**
+     * Preview which tasks would be cancelled (dry run)
+     */
+    async previewArchiveTaskCancellation() {
+        const handle = this.profiler?.start('tasks:preview-archive');
+        const archiveFolderPath = this.settings.paraFolders?.archive || '4 - ARCHIVE';
+
+        const allFiles = this.app.vault.getMarkdownFiles();
+        const archiveFiles = allFiles.filter(file =>
+            file.path.startsWith(archiveFolderPath + '/') || file.path === archiveFolderPath
+        );
+
+        if (archiveFiles.length === 0) {
+            new Notice(`No files found in ${archiveFolderPath}`);
+            this.profiler?.end(handle);
+            return;
+        }
+
+        let totalTasks = 0;
+        const filesWithTasks = [];
+
+        for (const file of archiveFiles) {
+            const content = await this.app.vault.read(file);
+            const taskMatches = content.match(/^(\s*)([-*+])\s+\[\s\](.*)/gm);
+
+            if (taskMatches && taskMatches.length > 0) {
+                totalTasks += taskMatches.length;
+                filesWithTasks.push({
+                    path: file.path,
+                    name: file.name,
+                    taskCount: taskMatches.length
+                });
+            }
+        }
+
+        if (totalTasks === 0) {
+            new Notice('No open tasks found in Archive folder');
+        } else {
+            console.log('Quick PARA: Archive task preview:', {
+                totalFiles: archiveFiles.length,
+                filesWithTasks: filesWithTasks.length,
+                totalOpenTasks: totalTasks,
+                files: filesWithTasks
+            });
+
+            new Notice(
+                `Preview: ${totalTasks} open tasks found in ${filesWithTasks.length} files. ` +
+                `Check console for details.`
+            );
+        }
+
+        this.profiler?.end(handle, {
+            totalTasks,
+            filesWithTasks: filesWithTasks.length
+        });
+    }
+}
+
+// ============================================================================
 // SETTINGS TAB
 // ============================================================================
 
@@ -1989,7 +2002,7 @@ class QuickParaSettingTab extends PluginSettingTab {
 
         // Header description
         containerEl.createEl('p', {
-            text: 'Quick PARA helps you organize your Obsidian vault using the PARA method (Projects, Areas, Resources, Archive). This plugin automates folder setup, template deployment, and project update generation.',
+            text: 'Quick PARA helps you organize your Obsidian vault using the PARA method (Projects, Areas, Resources, Archive). This plugin automates folder setup, template deployment, and task management for archived notes.',
             cls: 'setting-item-description'
         });
 
@@ -2015,7 +2028,7 @@ class QuickParaSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('🔍 Check Dependencies')
-            .setDesc('Verify that required plugins (Templater, Tasks, Kanban) are installed. Make sure each plugin is also active after installation.')
+            .setDesc('Verify that required plugins (Templater, Tasks) are installed. Make sure each plugin is also active after installation.')
             .addButton(button => button
                 .setButtonText('Check Dependencies')
                 .onClick(async () => {
@@ -2033,11 +2046,23 @@ class QuickParaSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('📝 Deploy PARA Templates')
-            .setDesc('Install default templates for notes in each PARA folder (inbox, projects, areas, resources, archive), plus the Project Dashboard and PARA Method Overview guide. These are starting points you can customize to your liking. Set these templates in Templater plugin settings to use them when creating new notes. Only creates missing templates, will not overwrite your customizations.')
+            .setDesc('Install default templates for notes in each PARA folder (inbox, projects, areas, resources, archive), plus the PARA Method Overview guide. These are starting points you can customize to your liking. Set these templates in Templater plugin settings to use them when creating new notes. Only creates missing templates, will not overwrite your customizations.')
             .addButton(button => button
                 .setButtonText('Deploy Templates')
                 .onClick(async () => {
                     await this.plugin.templateManager.deployAllTemplates();
+                }));
+
+        new Setting(containerEl)
+            .setName('❌ Cancel Archive Tasks')
+            .setDesc('Cancel all open tasks in your Archive folder. Useful for cleaning up tasks from cancelled or completed projects.')
+            .addButton(button => button
+                .setButtonText('Cancel Archive Tasks')
+                .setWarning()
+                .onClick(async () => {
+                    if (confirm('This will cancel all open tasks in your Archive folder by converting [ ] to [-]. This cannot be undone except through undo history.\n\nContinue?')) {
+                        await this.plugin.taskManager.cancelArchiveTasks();
+                    }
                 }));
 
         // Dependency links
@@ -2048,9 +2073,6 @@ class QuickParaSettingTab extends PluginSettingTab {
 
         const tasksLink = containerEl.createEl('div', { cls: 'setting-item-description' });
         tasksLink.innerHTML = '• <strong>Tasks</strong>: Required for task management features. <a href="obsidian://show-plugin?id=obsidian-tasks-plugin">Install from Community Plugins</a>';
-
-        const kanbanLink = containerEl.createEl('div', { cls: 'setting-item-description' });
-        kanbanLink.innerHTML = '• <strong>Kanban</strong>: Required for Project Dashboard and project update generation. This plugin visualizes your active work and enables the automated update workflow. <a href="obsidian://show-plugin?id=obsidian-kanban">Install from Community Plugins</a>';
 
         containerEl.createEl('hr');
 
@@ -2151,112 +2173,6 @@ class QuickParaSettingTab extends PluginSettingTab {
             this.plugin.settings.paraFolders.archive = e.target.value.trim();
             await this.plugin.saveSettings();
         });
-
-        containerEl.createEl('hr');
-
-        // Project Updates Section
-        containerEl.createEl('h3', { text: 'Project Update Generation' });
-
-        containerEl.createEl('p', {
-            text: 'Automatically generate recurring status reports for any project folder. Each project can have its own schedule (daily, weekly, or monthly). All update notes are created in your Inbox folder with names like "UPDATE — [PROJECT NAME].md".',
-            cls: 'setting-item-description'
-        });
-
-        containerEl.createEl('p', {
-            text: 'The Kanban plugin (required dependency) provides the Project Dashboard that tracks your active work. If a Kanban board doesn\'t exist at the path below, deploy the Project Dashboard template using the "Deploy PARA Templates" button. You can change the board path if needed.',
-            cls: 'setting-item-description'
-        });
-
-        new Setting(containerEl)
-            .setName('Enable Project Updates')
-            .setDesc('Turn on scheduled project update generation. When disabled, no automatic updates will be created.')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.projectUpdates.enabled)
-                .onChange(async (value) => {
-                    this.plugin.settings.projectUpdates.enabled = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        // Kanban Board File with autocomplete
-        const kanbanSetting = new Setting(containerEl)
-            .setName('Kanban Board File')
-            .setDesc('Path to your Project Dashboard kanban board. If this file doesn\'t exist, it will be created in your Inbox when you enable Project Updates.');
-
-        // Create datalist for markdown files
-        const files = this.app.vault.getMarkdownFiles().map(f => f.path).sort();
-        const filesDatalistId = 'kanban-file-suggest';
-        const filesDatalist = containerEl.createEl('datalist', { attr: { id: filesDatalistId } });
-        files.forEach(file => {
-            filesDatalist.createEl('option', { value: file });
-        });
-
-        const kanbanInput = kanbanSetting.controlEl.createEl('input', {
-            type: 'text',
-            placeholder: '0 - INBOX/Project Dashboard.md',
-            value: this.plugin.settings.projectUpdates.kanbanFile || '0 - INBOX/Project Dashboard.md',
-            attr: { list: filesDatalistId }
-        });
-        kanbanInput.style.width = '100%';
-        kanbanInput.addEventListener('input', async (e) => {
-            this.plugin.settings.projectUpdates.kanbanFile = e.target.value.trim();
-            await this.plugin.saveSettings();
-        });
-
-        // Project update configurations list
-        if (this.plugin.settings.projectUpdates.configs.length === 0) {
-            containerEl.createEl('p', {
-                text: 'No project updates configured. Click "Add Project Update" to create your first automated status report.',
-                cls: 'setting-item-description'
-            });
-        } else {
-            this.plugin.settings.projectUpdates.configs.forEach((config, index) => {
-                // Build description with schedule details
-                let scheduleDesc = config.schedule;
-                if (config.schedule === 'weekly' && config.dayOfWeek) {
-                    scheduleDesc = `${config.dayOfWeek}s`;
-                }
-                if (config.timeOfDay) {
-                    scheduleDesc += ` at ${config.timeOfDay}`;
-                }
-                const fullDesc = `${scheduleDesc} • ${config.projectFolder}${config.enabled ? '' : ' (disabled)'}`;
-
-                new Setting(containerEl)
-                    .setName(config.name || 'Unnamed Project Update')
-                    .setDesc(fullDesc)
-                    .addButton(button => button
-                        .setButtonText('Edit')
-                        .onClick(() => {
-                            this.plugin.openProjectUpdateConfigModal(config, index);
-                        }))
-                    .addButton(button => button
-                        .setButtonText('Delete')
-                        .setWarning()
-                        .onClick(async () => {
-                            this.plugin.settings.projectUpdates.configs.splice(index, 1);
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }));
-            });
-        }
-
-        new Setting(containerEl)
-            .setName('Add Project Update')
-            .setDesc('Configure a new automated project update')
-            .addButton(button => button
-                .setButtonText('+ Add Project Update')
-                .onClick(() => {
-                    this.plugin.openProjectUpdateConfigModal();
-                }));
-
-        new Setting(containerEl)
-            .setName('Generate Updates Now')
-            .setDesc('Manually generate project updates for all enabled configurations right now')
-            .addButton(button => button
-                .setButtonText('Generate Now')
-                .setCta()
-                .onClick(async () => {
-                    await this.plugin.generateAllProjectUpdates();
-                }));
 
         containerEl.createEl('hr');
 
@@ -2389,6 +2305,50 @@ class QuickParaSettingTab extends PluginSettingTab {
 
         containerEl.createEl('hr');
 
+        // Task Management Section
+        containerEl.createEl('h3', { text: 'Task Management' });
+        containerEl.createEl('p', {
+            text: 'When notes are moved to Archive, they often contain open tasks that are no longer relevant. Use these tools to automatically cancel those tasks.',
+            cls: 'setting-item-description'
+        });
+
+        new Setting(containerEl)
+            .setName('🔍 Preview Archive Tasks')
+            .setDesc('See how many open tasks exist in your Archive folder without making any changes')
+            .addButton(button => button
+                .setButtonText('Preview')
+                .onClick(async () => {
+                    await this.plugin.taskManager.previewArchiveTaskCancellation();
+                }));
+
+        new Setting(containerEl)
+            .setName('❌ Cancel Archive Tasks')
+            .setDesc('Cancel all open tasks in Archive folder (converts [ ] to [-]). This is useful for cleaning up duplicative or cancelled tasks.')
+            .addButton(button => button
+                .setButtonText('Cancel Archive Tasks')
+                .setWarning()
+                .onClick(async () => {
+                    if (confirm('This will cancel all open tasks in your Archive folder by converting [ ] to [-]. This cannot be undone except through undo history.\n\nContinue?')) {
+                        await this.plugin.taskManager.cancelArchiveTasks();
+                    }
+                }));
+
+        new Setting(containerEl)
+            .setName('❌ Cancel Current File Tasks')
+            .setDesc('Cancel all open tasks in the currently active file')
+            .addButton(button => button
+                .setButtonText('Cancel Current File')
+                .onClick(async () => {
+                    await this.plugin.taskManager.cancelCurrentFileTasks();
+                }));
+
+        containerEl.createEl('p', {
+            text: 'Tip: You can also access these commands from the Command Palette (Ctrl/Cmd+P).',
+            cls: 'setting-item-description'
+        });
+
+        containerEl.createEl('hr');
+
         // Advanced Section
         containerEl.createEl('h3', { text: 'Advanced Settings' });
 
@@ -2433,6 +2393,7 @@ module.exports = class QuickParaPlugin extends Plugin {
         this.taggingManager = new TaggingManager(this.app, this.settings, this.profiler);
         this.agendaManager = new AgendaManager(this.app, this.settings, this.profiler);
         this.templateManager = new TemplateManager(this.app, this.settings, this.profiler);
+        this.taskManager = new TaskManager(this.app, this.settings, this.profiler);
 
         // Check dependencies on load
         await this.checkDependencies();
@@ -2524,25 +2485,6 @@ module.exports = class QuickParaPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: 'generate-project-updates',
-            name: 'Generate all project updates now',
-            callback: async () => {
-                if (!this.settings.projectUpdates?.enabled) {
-                    new Notice('Project updates are disabled in settings. Enable them first.');
-                    return;
-                }
-
-                if (!this.settings.projectUpdates?.configs || this.settings.projectUpdates.configs.length === 0) {
-                    new Notice('No project updates configured. Add one in settings first.');
-                    return;
-                }
-
-                // Generate updates for all enabled configs
-                await this.generateAllProjectUpdates();
-            }
-        });
-
-        this.addCommand({
             id: 'deploy-templates',
             name: 'Deploy PARA templates',
             callback: async () => {
@@ -2578,29 +2520,45 @@ module.exports = class QuickParaPlugin extends Plugin {
             }
         });
 
+        this.addCommand({
+            id: 'cancel-archive-tasks',
+            name: 'Cancel all open tasks in Archive folder',
+            callback: async () => {
+                await this.taskManager.cancelArchiveTasks();
+            }
+        });
+
+        this.addCommand({
+            id: 'cancel-current-file-tasks',
+            name: 'Cancel all open tasks in current file',
+            callback: async () => {
+                await this.taskManager.cancelCurrentFileTasks();
+            }
+        });
+
+        this.addCommand({
+            id: 'preview-archive-task-cancellation',
+            name: 'Preview archive task cancellation (dry run)',
+            callback: async () => {
+                await this.taskManager.previewArchiveTaskCancellation();
+            }
+        });
+
         // Add ribbon icon for quick setup
         this.addRibbonIcon('layout-grid', 'Quick PARA Setup', async () => {
             await this.provisioningManager.runSetupWizard();
         });
 
-        // Add ribbon icon for generating project updates
-        this.addRibbonIcon('calendar-check', 'Generate Project Updates', async () => {
-            if (!this.settings.projectUpdates?.enabled) {
-                new Notice('Project updates are disabled. Enable them in settings first.');
-                return;
-            }
-
-            if (!this.settings.projectUpdates?.configs || this.settings.projectUpdates.configs.length === 0) {
-                new Notice('No project updates configured. Add one in settings first.');
-                return;
-            }
-
-            await this.generateAllProjectUpdates();
-        });
-
         // Add ribbon icon for bulk tag update
         this.addRibbonIcon('tags', 'Update PARA tags for all files', async () => {
             await this.taggingManager.bulkUpdateTags();
+        });
+
+        // Add ribbon icon for task cancellation
+        this.addRibbonIcon('x-circle', 'Cancel Archive Tasks', async () => {
+            if (confirm('This will cancel all open tasks in your Archive folder by converting [ ] to [-]. This cannot be undone except through undo history.\n\nContinue?')) {
+                await this.taskManager.cancelArchiveTasks();
+            }
         });
 
         // Add settings tab
@@ -2667,125 +2625,6 @@ module.exports = class QuickParaPlugin extends Plugin {
             this.settings.firstRun = false;
             await this.saveSettings();
         }, 2000);
-    }
-
-    /**
-     * Open the project update configuration modal
-     * @param {Object} existingConfig - Existing config to edit (null for new)
-     * @param {number} configIndex - Index of config in array (for editing)
-     */
-    openProjectUpdateConfigModal(existingConfig = null, configIndex = null) {
-        const modal = new ProjectUpdateConfigModal(
-            this.app,
-            this,
-            existingConfig,
-            async (config) => {
-                if (configIndex !== null) {
-                    // Edit existing config
-                    this.settings.projectUpdates.configs[configIndex] = config;
-                } else {
-                    // Add new config
-                    this.settings.projectUpdates.configs.push(config);
-                }
-
-                await this.saveSettings();
-
-                // Refresh settings tab
-                const settingsTab = this.app.setting.pluginTabs.find(tab => tab instanceof QuickParaSettingTab);
-                if (settingsTab) {
-                    settingsTab.display();
-                }
-
-                new Notice(`Project update "${config.name}" saved!`);
-            }
-        );
-        modal.open();
-    }
-
-    /**
-     * Generate all project updates for enabled configurations
-     */
-    async generateAllProjectUpdates() {
-        const enabledConfigs = this.settings.projectUpdates.configs.filter(c => c.enabled);
-        const timer = this.profiler?.start('project-updates:generate-all');
-
-        if (enabledConfigs.length === 0) {
-            new Notice('No enabled project updates found.');
-            this.profiler?.end(timer, { total: 0, successCount: 0 });
-            return;
-        }
-
-        new Notice(`Generating ${enabledConfigs.length} project update(s)...`);
-
-        let successCount = 0;
-        for (const config of enabledConfigs) {
-            try {
-                await this.generateProjectUpdate(config);
-                successCount++;
-            } catch (error) {
-                console.error(`Failed to generate update for ${config.name}:`, error);
-                new Notice(`Error generating update for ${config.name}: ${error.message}`, 5000);
-            }
-        }
-
-        new Notice(`Generated ${successCount} of ${enabledConfigs.length} project update(s) successfully!`);
-        this.profiler?.end(timer, { total: enabledConfigs.length, successCount });
-    }
-
-    /**
-     * Generate a single project update
-     * @param {Object} config - Project update configuration
-     */
-    async generateProjectUpdate(config) {
-        const timer = this.profiler?.start('project-updates:generate');
-        const context = { configName: config?.name, projectFolder: config?.projectFolder };
-
-        const inboxFolder = this.settings.paraFolders.inbox || '0 - INBOX';
-        const updateFileName = `UPDATE — ${config.name}.md`;
-        const updatePath = `${inboxFolder}/${updateFileName}`;
-        context.updatePath = updatePath;
-        let created = false;
-        let success = false;
-
-        try {
-            // Check if update file already exists
-            let updateFile = this.app.vault.getAbstractFileByPath(updatePath);
-
-            if (!updateFile) {
-                // Create new update file
-                const initialContent = `---
-tags:
-  - all
-  - project-updates
-para: inbox
-created: ${new Date().toISOString().split('T')[0]}
-project_folder: ${config.projectFolder}
----
-
-# ${updateFileName.replace('.md', '')}
-
-## Notes
-
-`;
-                updateFile = await this.app.vault.create(updatePath, initialContent);
-                console.log(`Quick PARA: Created new project update file: ${updatePath}`);
-                created = true;
-            }
-
-            // Update the agenda with kanban data
-            const kanbanPath = this.settings.projectUpdates.kanbanFile;
-            await this.agendaManager.updateProjectAgenda(updatePath, kanbanPath, config.projectFolder);
-
-            console.log(`Quick PARA: Updated project agenda for ${config.name}`);
-            success = true;
-        } finally {
-            this.profiler?.end(timer, { ...context, created, success });
-            if (success) {
-                this.profiler?.increment('project-updates:success');
-            } else {
-                this.profiler?.increment('project-updates:errors');
-            }
-        }
     }
 
     async loadSettings() {

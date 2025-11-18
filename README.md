@@ -27,6 +27,12 @@ Comprehensive PARA (Projects, Areas, Resources, Archive) method support for Obsi
 - Automatic backup before overwrite
 - Templater integration
 
+### ❌ Task Management
+- Cancel open tasks in Archive folder
+- Preview mode to see affected tasks
+- Works on current file or entire Archive
+- Converts `[ ]` to `[-]` (cancelled status)
+
 ### ✅ Dependency Checking
 - Verify required plugins (Templater, Tasks)
 - User-friendly warnings
@@ -67,6 +73,9 @@ Go to Settings → Quick PARA to configure:
 - **Update weekly 1-on-1 agenda**: Generate agenda from Project Dashboard
 - **Deploy PARA templates**: Install templates to TEMPLATES folder
 - **Check plugin dependencies**: Verify Templater and Tasks are installed
+- **Cancel all open tasks in Archive folder**: Bulk cancel tasks in archived notes
+- **Cancel all open tasks in current file**: Cancel tasks in active note
+- **Preview archive task cancellation**: Dry-run to see affected tasks
 
 ## How It Works
 
@@ -116,6 +125,34 @@ The plugin can automatically update your weekly 1-on-1 note:
 
 Content between `<!-- AUTO-MANAGED -->` tags is updated automatically. Content outside these tags is never touched.
 
+### Task Cancellation
+
+When notes are archived, they often contain open tasks that are no longer relevant (cancelled projects, duplicative checklists, etc.). The task cancellation feature helps clean these up:
+
+**What it does**:
+- Finds all open tasks (lines with `- [ ]`, `* [ ]`, or `+ [ ]`)
+- Converts them to cancelled format: `- [-]`
+- Works on entire Archive folder or current file
+- Preview mode available to see what would change
+
+**Example transformation**:
+```markdown
+Before:
+- [ ] Complete project proposal
+- [ ] Schedule kickoff meeting
+- [x] Research competitors
+
+After:
+- [-] Complete project proposal
+- [-] Schedule kickoff meeting
+- [x] Research competitors
+```
+
+**Usage**:
+1. Use "Preview archive task cancellation" to see affected tasks (check console for details)
+2. Run "Cancel all open tasks in Archive folder" to execute
+3. Or use "Cancel all open tasks in current file" for single-file cleanup
+
 ## Dependencies
 
 ### Required
@@ -125,21 +162,111 @@ Content between `<!-- AUTO-MANAGED -->` tags is updated automatically. Content o
 ### Optional
 - **Kanban**: For Project Dashboard board (recommended)
 
-## Development & Build
+## Development & Deployment
 
-Source code now lives under `src/` and is bundled with esbuild before distributing to a vault.
+### Project Structure
 
-```bash
-# Inside custom-extensions/plugins/quick-para
-npm install            # first run only (requires network)
-npm run build          # bundles src/index.js into main.js
-rsync -a --delete \
-  --exclude 'node_modules' \
-  --exclude 'src' \
-  . "/Users/you/Library/Mobile Documents/iCloud~md~obsidian/Documents/<Vault>/.obsidian/plugins/quick-para/"
+Source code lives under `src/` and is bundled with esbuild before deploying to vaults:
+
+```
+custom-extensions/plugins/quick-para/
+├── src/
+│   └── index.js           # Source code (edit this)
+├── main.js                # Compiled bundle (generated)
+├── manifest.json          # Plugin metadata
+├── README.md
+├── package.json
+└── esbuild.config.mjs
 ```
 
-Use `npm run dev` for a watch build during iteractive development. The checked-in `main.js` is just a stub (`module.exports = require("./src/index.js")`) so dev vaults can keep running from source; `npm run build` replaces it with the distributable single-file bundle expected by Obsidian’s plugin loader.
+### Development Workflow
+
+**CRITICAL**: Obsidian loads `main.js`, NOT `src/index.js`. You must rebuild after editing source files.
+
+#### 1. Edit Source Code
+
+Edit files in `src/index.js` (or other source files).
+
+#### 2. Build the Plugin
+
+**Every time you change source code**, run:
+
+```bash
+cd /Users/mriechers/Developer/obsidian-config/custom-extensions/plugins/quick-para
+npm run build
+```
+
+This bundles `src/index.js` → `main.js` (the file Obsidian actually loads).
+
+#### 3. Deploy to Vaults
+
+After building, deploy to all vaults:
+
+```bash
+# Deploy to MarkBrain
+rsync -av main.js manifest.json README.md \
+  "/Users/mriechers/Library/Mobile Documents/iCloud~md~obsidian/Documents/MarkBrain/.obsidian/plugins/quick-para/"
+
+# Deploy to Test Vault
+rsync -av main.js manifest.json README.md \
+  "/Users/mriechers/Library/Mobile Documents/iCloud~md~obsidian/Documents/Test Vault/.obsidian/plugins/quick-para/"
+```
+
+**Or use the full sync** (includes node_modules, takes longer):
+
+```bash
+rsync -av --delete \
+  "/Users/mriechers/Developer/obsidian-config/custom-extensions/plugins/quick-para/" \
+  "/Users/mriechers/Library/Mobile Documents/iCloud~md~obsidian/Documents/MarkBrain/.obsidian/plugins/quick-para/"
+```
+
+#### 4. Reload Plugin in Obsidian
+
+After deployment, reload the plugin:
+- **Option A**: Quit and restart Obsidian (safest)
+- **Option B**: Settings → Community Plugins → Toggle "Quick PARA" off then on
+
+### Common Mistakes
+
+❌ **Editing source but forgetting to rebuild**
+- Changes to `src/index.js` won't appear until you run `npm run build`
+- Obsidian loads `main.js`, not the source files
+
+❌ **Deploying without rebuilding**
+- Running `rsync` copies old `main.js` to vaults
+- Always run `npm run build` first
+
+❌ **Not reloading plugin in Obsidian**
+- Even after deploying new files, Obsidian uses the cached version
+- Must reload plugin or restart Obsidian to see changes
+
+### Quick Reference
+
+**Full deployment process (after editing source):**
+
+```bash
+# 1. Build
+cd /Users/mriechers/Developer/obsidian-config/custom-extensions/plugins/quick-para
+npm run build
+
+# 2. Deploy to all vaults
+rsync -av main.js manifest.json README.md \
+  "/Users/mriechers/Library/Mobile Documents/iCloud~md~obsidian/Documents/MarkBrain/.obsidian/plugins/quick-para/"
+rsync -av main.js manifest.json README.md \
+  "/Users/mriechers/Library/Mobile Documents/iCloud~md~obsidian/Documents/Test Vault/.obsidian/plugins/quick-para/"
+
+# 3. Reload Obsidian or toggle plugin off/on in each vault
+```
+
+### Development Mode (Optional)
+
+For rapid iteration during development:
+
+```bash
+npm run dev  # Watch mode - rebuilds on file changes
+```
+
+The checked-in `main.js` is just a stub (`module.exports = require("./src/index.js")`) in source control. `npm run build` replaces it with the distributable single-file bundle expected by Obsidian's plugin loader.
 
 ## Configuration
 
