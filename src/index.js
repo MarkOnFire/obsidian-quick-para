@@ -22,6 +22,10 @@ const DEFAULT_SETTINGS = {
         propertyName: "para",  // Locked - not user-configurable
         persistSubfolderTags: true
     },
+    tasks: {
+        autoCancelOnArchive: false,  // Default: disabled for safety
+        showCancellationNotices: true  // Show feedback when auto-cancelling
+    },
     diagnostics: {
         profilingEnabled: false,
         slowOperationThresholdMs: 200,
@@ -518,7 +522,10 @@ class TaggingManager {
                 }
             });
 
-            console.log(`Quick PARA: Updated tags for ${file.name} - PARA: ${paraLocation}, Subfolders: ${subfolderTags.join(', ')}`);
+            // Only log in verbose mode or when profiling
+            if (this.profiler?.isEnabled() || this.settings.debug?.verboseLogging) {
+                console.log(`Quick PARA: Updated tags for ${file.name} - PARA: ${paraLocation}, Subfolders: ${subfolderTags.join(', ')}`);
+            }
             this.profiler?.increment('tagging:updated');
         } catch (error) {
             console.error('Error updating PARA tags:', error);
@@ -532,6 +539,8 @@ class TaggingManager {
         const files = this.app.vault.getMarkdownFiles();
         const timer = this.profiler?.start('tagging:bulk-update');
         let updated = 0;
+        let skipped = 0;
+        const errors = [];
 
         try {
             if (preview) {
@@ -541,14 +550,67 @@ class TaggingManager {
 
             new Notice(`Updating PARA tags for ${files.length} files...`);
 
-            for (const file of files) {
-                await this.updateParaTags(file);
-                updated++;
+            // Process files in batches for better performance
+            const BATCH_SIZE = 50; // Process 50 files concurrently
+            const batches = [];
+
+            for (let i = 0; i < files.length; i += BATCH_SIZE) {
+                batches.push(files.slice(i, i + BATCH_SIZE));
             }
 
-            new Notice(`Updated PARA tags for ${updated} files!`);
+            // Process each batch
+            for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+                const batch = batches[batchIndex];
+
+                // Show progress for large operations
+                if (files.length > 100 && batchIndex % 5 === 0) {
+                    const progress = Math.round((batchIndex / batches.length) * 100);
+                    new Notice(`Progress: ${progress}% (${batchIndex * BATCH_SIZE}/${files.length} files)`, 2000);
+                }
+
+                // Process batch in parallel
+                const results = await Promise.allSettled(
+                    batch.map(async (file) => {
+                        try {
+                            await this.updateParaTags(file);
+                            return { success: true, file: file.name };
+                        } catch (error) {
+                            return {
+                                success: false,
+                                file: file.name,
+                                error: error.message
+                            };
+                        }
+                    })
+                );
+
+                // Count results
+                for (const result of results) {
+                    if (result.status === 'fulfilled' && result.value.success) {
+                        updated++;
+                    } else if (result.status === 'fulfilled' && !result.value.success) {
+                        errors.push(result.value);
+                    } else if (result.status === 'rejected') {
+                        errors.push({ file: 'unknown', error: result.reason });
+                    }
+                }
+            }
+
+            // Show final summary
+            let message = `Updated PARA tags for ${updated} files!`;
+            if (errors.length > 0) {
+                message += ` (${errors.length} errors)`;
+                console.error('Quick PARA: Bulk update errors:', errors);
+            }
+            new Notice(message);
+
         } finally {
-            this.profiler?.end(timer, { totalFiles: files.length, updated });
+            this.profiler?.end(timer, {
+                totalFiles: files.length,
+                updated,
+                skipped,
+                errors: errors.length
+            });
         }
     }
 
@@ -2313,6 +2375,28 @@ class QuickParaSettingTab extends PluginSettingTab {
         });
 
         new Setting(containerEl)
+            .setName('Automatically cancel tasks when archiving')
+            .setDesc('When a note is moved to Archive, automatically cancel all open tasks [ ] → [-]. Disabled by default for safety.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.tasks.autoCancelOnArchive)
+                .onChange(async (value) => {
+                    this.plugin.settings.tasks.autoCancelOnArchive = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Show notices for auto-cancelled tasks')
+            .setDesc('Display a notification when tasks are automatically cancelled during archiving')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.tasks.showCancellationNotices)
+                .onChange(async (value) => {
+                    this.plugin.settings.tasks.showCancellationNotices = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        containerEl.createEl('h4', { text: 'Manual Task Operations' });
+
+        new Setting(containerEl)
             .setName('🔍 Preview Archive Tasks')
             .setDesc('See how many open tasks exist in your Archive folder without making any changes')
             .addButton(button => button
@@ -2387,13 +2471,13 @@ module.exports = class QuickParaPlugin extends Plugin {
         this.initializeProfiler();
         const onloadTimer = this.profiler?.start('plugin:onload');
 
-        // Initialize managers
+        // Initialize managers (order matters: taskManager must exist before taggingManager)
         this.dependencyManager = new DependencyManager(this.app);
         this.provisioningManager = new ProvisioningManager(this.app, this.settings);
-        this.taggingManager = new TaggingManager(this.app, this.settings, this.profiler);
+        this.taskManager = new TaskManager(this.app, this.settings, this.profiler);
+        this.taggingManager = new TaggingManager(this.app, this.settings, this.profiler, this.taskManager);
         this.agendaManager = new AgendaManager(this.app, this.settings, this.profiler);
         this.templateManager = new TemplateManager(this.app, this.settings, this.profiler);
-        this.taskManager = new TaskManager(this.app, this.settings, this.profiler);
 
         // Check dependencies on load
         await this.checkDependencies();
@@ -2541,23 +2625,6 @@ module.exports = class QuickParaPlugin extends Plugin {
             name: 'Preview archive task cancellation (dry run)',
             callback: async () => {
                 await this.taskManager.previewArchiveTaskCancellation();
-            }
-        });
-
-        // Add ribbon icon for quick setup
-        this.addRibbonIcon('layout-grid', 'Quick PARA Setup', async () => {
-            await this.provisioningManager.runSetupWizard();
-        });
-
-        // Add ribbon icon for bulk tag update
-        this.addRibbonIcon('tags', 'Update PARA tags for all files', async () => {
-            await this.taggingManager.bulkUpdateTags();
-        });
-
-        // Add ribbon icon for task cancellation
-        this.addRibbonIcon('x-circle', 'Cancel Archive Tasks', async () => {
-            if (confirm('This will cancel all open tasks in your Archive folder by converting [ ] to [-]. This cannot be undone except through undo history.\n\nContinue?')) {
-                await this.taskManager.cancelArchiveTasks();
             }
         });
 
