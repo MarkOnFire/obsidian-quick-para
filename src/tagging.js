@@ -1,9 +1,11 @@
 const { Notice } = require('obsidian');
 
 class TaggingManager {
-    constructor(app, settings) {
+    constructor(app, settings, profiler, taskManager) {
         this.app = app;
         this.settings = settings;
+        this.profiler = profiler;
+        this.taskManager = taskManager;
     }
 
     /**
@@ -152,6 +154,33 @@ class TaggingManager {
             });
 
             console.log(`Quick PARA: Updated tags for ${file.name} - PARA: ${paraLocation}, Subfolders: ${subfolderTags.join(', ')}`);
+
+            // Auto-cancel tasks when moving to Archive (if enabled)
+            if (this.settings.tasks?.autoCancelOnArchive &&
+                paraLocation === 'archive' &&
+                this.taskManager) {
+
+                // Only auto-cancel if this is a move TO archive (not already in archive)
+                const metadata = this.app.metadataCache.getFileCache(file);
+                const currentParaLocation = metadata?.frontmatter?.para;
+
+                // If we just changed TO archive (not already archive), cancel tasks
+                if (currentParaLocation !== 'archive') {
+                    const result = await this.taskManager.cancelTasksInFile(file);
+
+                    if (result.modified && this.settings.tasks?.showCancellationNotices) {
+                        new Notice(
+                            `Auto-cancelled ${result.taskCount} task${result.taskCount !== 1 ? 's' : ''} in ${file.name}`
+                        );
+                    }
+
+                    if (result.modified) {
+                        console.log(
+                            `Quick PARA: Auto-cancelled ${result.taskCount} tasks in ${file.name} (moved to Archive)`
+                        );
+                    }
+                }
+            }
         } catch (error) {
             console.error('Error updating PARA tags:', error);
         }
