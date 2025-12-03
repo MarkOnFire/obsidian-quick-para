@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Initializer and Build Pipeline",
+    "description": "Ensure npm dependencies install cleanly and the bundle builds to main.js/manifest.json",
+    "status": "completed",
+    "verification_command": "./init.sh"
+  },
+  {
+    "name": "Automatic PARA Tagging",
+    "description": "Maintain para property, subfolder breadcrumb tags, and para_history on file moves",
+    "status": "completed",
+    "verification_command": "npm run build"
+  },
+  {
+    "name": "Weekly Agenda + PBSWI Extraction",
+    "description": "Generate weekly 1:1 agendas from Project Dashboard with PBSWI project pulls",
+    "status": "in_progress",
+    "verification_command": "npm run build"
+  },
+  {
+    "name": "Template Deployment and Dependency Checks",
+    "description": "Deploy PARA templates safely and verify Templater/Tasks requirements",
+    "status": "completed",
+    "verification_command": "npm run build"
+  },
+  {
+    "name": "Archive Task Cancellation and Diagnostics",
+    "description": "Cancel open tasks on archive moves with optional notices and profiling hooks",
+    "status": "completed",
+    "verification_command": "npm run build"
+  }
+]

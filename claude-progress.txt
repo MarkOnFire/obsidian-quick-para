@@ -1,0 +1,6 @@
+# Progress Log (Quick PARA)
+# Read feature_list.json and run ./init.sh before coding. Log each session with timestamp, agent, actions, and next steps.
+
+2025-12-02 22:37 - Maintainer
+- Added long-running agent scaffolding (init.sh, feature_list.json, claude-progress.txt starter).
+- Next: Backfill verification steps for weekly agenda flow and confirm diagnostics hooks still work after recent tagging updates.
