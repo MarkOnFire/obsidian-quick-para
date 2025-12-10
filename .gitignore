@@ -1,2 +1,21 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Source maps
 *.map
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test vaults
+test-vault/
