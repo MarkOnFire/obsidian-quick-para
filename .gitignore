@@ -19,3 +19,7 @@ Thumbs.db
 
 # Test vaults
 test-vault/
+
+# Local configuration (vault paths, etc.)
+.env.local
+.env.*.local
