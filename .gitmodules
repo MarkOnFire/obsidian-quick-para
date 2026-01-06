@@ -1,0 +1,3 @@
+[submodule "para-visualizer"]
+	path = para-visualizer
+	url = git@github.com:MarkOnFire/obsidian-para-visualizer.git
