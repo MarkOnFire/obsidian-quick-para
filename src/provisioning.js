@@ -163,6 +163,12 @@ class SetupWizardModal extends Modal {
         nextSteps.createEl('li', { text: 'Deploy templates using the "Deploy PARA templates" command' });
         nextSteps.createEl('li', { text: 'Start creating notes in your PARA folders!' });
 
+        contentEl.createEl('h4', { text: 'Optional Enhancement' });
+        contentEl.createEl('p', {
+            text: 'When you deploy templates, a Resource Index database view is created. Enable the Bases core plugin (Settings > Core plugins > Bases) to use it.',
+            cls: 'setting-item-description'
+        });
+
         this.renderButtons(contentEl, false, false, true);
     }
 

@@ -102,6 +102,20 @@ class TaggingManager {
                 // Remove 'all' tag (we'll re-add it)
                 filteredTags = filteredTags.filter(tag => tag !== 'all');
 
+                // When moving to archive, clean up PARA location tags
+                // These are semantically meaningless once archived
+                if (paraLocation === 'archive') {
+                    const paraLocationTags = [
+                        'project', 'projects',
+                        'area', 'areas',
+                        'resource', 'resources',
+                        'inbox'
+                    ];
+                    filteredTags = filteredTags.filter(tag =>
+                        !paraLocationTags.includes(tag.toLowerCase())
+                    );
+                }
+
                 // Build new tag list
                 const nextTags = Array.from(new Set(filteredTags));
 
