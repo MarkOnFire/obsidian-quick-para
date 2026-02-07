@@ -1,114 +1,25 @@
 # Quick PARA Plugin for Obsidian
 
-[![Build](https://github.com/MarkOnFire/obsidian-quick-para/actions/workflows/build.yml/badge.svg)](https://github.com/MarkOnFire/obsidian-quick-para/actions/workflows/build.yml)
-
-Comprehensive PARA (Projects, Areas, Resources, Archive) method support for Obsidian. This plugin combines folder provisioning, automatic tagging, weekly agenda generation, and template management into a single, cohesive experience.
+Automate the [PARA method](https://fortelabs.com/blog/para/) in your Obsidian vault. Quick PARA handles folder provisioning, automatic tagging, template management, task cancellation for archived notes, and project update generation.
 
 ## Features
 
-### Quick Setup Wizard
-- One-click PARA folder structure provisioning
-- Guided setup for first-time users
-- Respects existing vault structure (never overwrites)
+### Setup wizard
 
-### Automatic Tagging
-- Property-based PARA location tracking (`para: projects`)
-- Persistent subfolder tags (historical breadcrumbs)
-- Auto-updates on file create/move
-- Bulk update command for existing files
+A guided, three-step wizard creates your PARA folder structure and optionally deploys starter templates. It detects existing folders and never overwrites your vault structure.
 
-### Weekly Agenda Generation
-- Parse Project Dashboard kanban board
-- Auto-populate weekly 1-on-1 meetings
-- Extract project tasks by folder
-- Preserve manual notes and feedback
+### Automatic PARA tagging
 
-### Template Management
-- Embedded PARA templates
-- One-click deployment
-- Automatic backup before overwrite
-- Templater integration
+- Sets a `para` frontmatter property (`inbox`, `projects`, `areas`, `resources`, `archive`) based on which PARA folder a note lives in.
+- Extracts subfolder names as persistent tags (e.g., a note in `1 - PROJECTS/Work/` gets the tag `work`).
+- Subfolder tags persist when notes move between PARA locations, preserving historical context.
+- Fires automatically on file create, move, and rename.
+- Bulk-update command to tag every note in the vault at once.
+- Tracks `created` and `archived` dates, and optionally records a `para_history` of location changes.
+- Skips files in the TEMPLATES folder to keep templates clean.
+- Adds a universal `all` tag to every note for easy filtering.
 
-### Task Management
-- Cancel open tasks in Archive folder
-- Preview mode to see affected tasks
-- Works on current file or entire Archive
-- Converts `[ ]` to `[-]` (cancelled status)
-
-### Dependency Checking
-- Verify required plugins (Templater, Tasks)
-- User-friendly warnings
-- Installation guidance
-
-## Installation
-
-### From Obsidian Community Plugins (Coming Soon)
-1. Open Settings → Community Plugins
-2. Search for "Quick PARA"
-3. Click Install, then Enable
-
-### Manual Installation
-1. Download the latest release from [Releases](https://github.com/MarkOnFire/obsidian-quick-para/releases)
-2. Extract to your vault's `.obsidian/plugins/quick-para/` folder
-3. Reload Obsidian
-4. Enable the plugin in Settings → Community Plugins
-
-### From Source
-```bash
-git clone https://github.com/MarkOnFire/obsidian-quick-para.git
-cd obsidian-quick-para
-npm install
-npm run build
-# Copy main.js, manifest.json, styles.css to your vault's .obsidian/plugins/quick-para/
-```
-
-## Usage
-
-### First-Time Setup
-
-1. Click the grid icon in the left ribbon, or run "Quick PARA: Run Setup Wizard"
-2. Follow the wizard steps:
-   - Review PARA folder configuration
-   - Create missing folders
-   - Deploy templates (optional)
-3. Install Templater and Tasks plugins if prompted
-
-### Configure Settings
-
-Go to Settings → Quick PARA to configure:
-
-- **PARA Folder Mappings**: Customize folder names for your vault
-- **Agenda Generation**: Configure Project Dashboard and Weekly 1-on-1 paths
-- **Tagging Behavior**: Property name, subfolder persistence
-- **Template Management**: Auto-deploy, backup options
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| Run PARA Setup Wizard | Initial setup and folder provisioning |
-| Update PARA tags for current file | Manually update tags for active note |
-| Update PARA tags for all files | Bulk update all notes in vault |
-| Update weekly 1-on-1 agenda | Generate agenda from Project Dashboard |
-| Deploy PARA templates | Install templates to TEMPLATES folder |
-| Check plugin dependencies | Verify Templater and Tasks are installed |
-| Cancel all open tasks in Archive | Bulk cancel tasks in archived notes |
-| Cancel all open tasks in current file | Cancel tasks in active note |
-| Preview archive task cancellation | Dry-run to see affected tasks |
-
-## How It Works
-
-### Automatic Tagging
-
-When you create or move a note:
-
-1. Plugin detects the PARA folder (`0 - INBOX`, `1 - Projects`, etc.)
-2. Sets `para` property to location (`inbox`, `projects`, `areas`, `resources`, `archive`)
-3. Adds subfolder tags (e.g., `work` from `1 - Projects/Work/`)
-4. Tags persist across moves (historical context)
-5. Always includes `all` tag for universal filtering
-
-**Example frontmatter**:
+**Example frontmatter:**
 ```yaml
 ---
 tags:
@@ -119,150 +30,134 @@ created: 2025-11-05
 ---
 ```
 
-### Weekly Agenda Generation
+### Template management
 
-The plugin can automatically update your weekly 1-on-1 note:
+- Six built-in PARA templates (default, inbox, projects, areas, resources, archive).
+- One-click deployment to a TEMPLATES folder.
+- Never overwrites user-edited templates; only creates missing ones.
+- Optional timestamped backup before overwriting.
+- Templater syntax support for dynamic variables.
+- Auto-generates a Resource Index `.base` file for the Obsidian Bases plugin.
 
-1. Parses Project Dashboard kanban board sections
-2. Extracts project wikilinks from configured folders
-3. Populates upcoming meeting section with:
-   - Active projects
-   - Blocked items
-   - Recently completed tasks
-4. Preserves manual notes and feedback sections
+### Task cancellation
 
-**Auto-Managed Sections**:
-```markdown
-#### Projects
-<!-- AUTO-MANAGED -->
-*Auto-updated from Project Dashboard*
-  * [[Project A]]
-  * [[Project B]]
-<!-- END AUTO-MANAGED -->
-```
+When notes are archived, their open tasks are usually no longer relevant. This feature converts open tasks (`- [ ]`, `* [ ]`, `+ [ ]`) to cancelled (`- [-]`).
 
-Content between `<!-- AUTO-MANAGED -->` tags is updated automatically. Content outside these tags is never touched.
+- Works on the entire Archive folder or the current file.
+- Preview (dry-run) mode shows exactly what would change before modifying anything.
+- Optional automatic cancellation when files are moved into Archive.
 
-### Task Cancellation
+### Project update generation
 
-When notes are archived, they often contain open tasks that are no longer relevant. The task cancellation feature helps clean these up:
+- Parses a Project Dashboard kanban board to extract project status.
+- Generates weekly sections with active projects, blocked items, recently completed tasks, and priority items.
+- Preserves manual notes outside `<!-- AUTO-MANAGED -->` markers.
+- Embeds Tasks plugin queries for recent completions, upcoming due dates, recurring tasks, and inactive projects.
 
-- Finds all open tasks (`- [ ]`, `* [ ]`, or `+ [ ]`)
-- Converts them to cancelled format: `- [-]`
-- Works on entire Archive folder or current file
-- Preview mode available to see what would change
+### Dependency checking
 
-## Dependencies
+- Verifies required plugins (Templater, Tasks) and optional plugins (Kanban) are installed and enabled.
+- Shows a modal with installation links for any missing dependencies.
 
-### Required
-- **Templater**: Template variable substitution
-- **Tasks**: Task management and queries
+## Commands
 
-### Optional
-- **Kanban**: For Project Dashboard board (recommended)
+| Command | Description |
+|---------|-------------|
+| Run PARA setup wizard | Launch the three-step folder and template setup |
+| Update PARA tags for current file | Tag the active note based on its PARA location |
+| Update PARA tags for all files | Bulk-tag every markdown file in the vault |
+| Deploy PARA templates | Create missing templates in the TEMPLATES folder |
+| Clean PARA properties from template files | Strip PARA tags from template files |
+| Check plugin dependencies | Verify Templater, Tasks, and Kanban status |
+| Cancel all open tasks in Archive folder | Bulk-cancel tasks in all archived notes |
+| Cancel all open tasks in current file | Cancel tasks in the active note |
+| Preview archive task cancellation (dry run) | See what would change without modifying files |
 
-## Default PARA Folder Structure
+## Installation
 
-```
-0 - INBOX/          # Unsorted incoming information
-1 - Projects/       # Active work with deadlines
-2 - AREAS/          # Ongoing responsibilities
-3 - RESOURCES/      # Reference materials
-4 - ARCHIVE/        # Completed or inactive items
-```
+### Manual installation
 
-All folder names are customizable in settings.
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/MarkOnFire/obsidian-quick-para/releases).
+2. Create a folder at `<your-vault>/.obsidian/plugins/quick-para/`.
+3. Copy the three files into that folder.
+4. Open Obsidian, go to **Settings > Community plugins**, and enable **Quick PARA**.
 
-## Development
-
-### Building from Source
+### From source
 
 ```bash
 git clone https://github.com/MarkOnFire/obsidian-quick-para.git
 cd obsidian-quick-para
 npm install
-npm run build    # Production build
-npm run dev      # Watch mode for development
+npm run build
 ```
 
-### Project Structure
+Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/quick-para/` directory, then enable the plugin in Obsidian.
+
+## Getting started
+
+1. Enable the plugin and click the grid icon in the left ribbon (or run **Quick PARA: Run PARA setup wizard**).
+2. Walk through the wizard to create folders and deploy templates.
+3. Install [Templater](https://github.com/SilentVoid13/Templater) and [Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) when prompted — both are required for full functionality.
+4. Configure folder names, tagging behavior, and template options in **Settings > Quick PARA**.
+
+## Dependencies
+
+| Plugin | Required | Purpose |
+|--------|----------|---------|
+| [Templater](https://github.com/SilentVoid13/Templater) | Yes | Template variable substitution |
+| [Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) | Yes | Task management and queries |
+| [Kanban](https://github.com/mgmeyers/obsidian-kanban) | No | Project Dashboard board for project updates |
+
+## Default folder structure
 
 ```
-obsidian-quick-para/
-├── src/
-│   ├── index.js         # Main plugin entry point
-│   ├── tagging.js       # PARA tagging logic
-│   ├── settings.js      # Settings UI
-│   ├── agenda.js        # Weekly agenda generation
-│   ├── provisioning.js  # Folder setup wizard
-│   ├── templates.js     # Template management
-│   └── dependencies.js  # Plugin dependency checking
-├── main.js              # Compiled bundle (generated)
-├── manifest.json        # Plugin metadata
-├── styles.css           # Plugin styles
-├── package.json
-└── esbuild.config.mjs   # Build configuration
+0 - INBOX/
+1 - PROJECTS/
+2 - AREAS/
+3 - RESOURCES/
+4 - ARCHIVE/
 ```
 
-### Testing in Obsidian
-
-1. Build: `npm run build`
-2. Copy `main.js`, `manifest.json`, `styles.css` to your test vault's `.obsidian/plugins/quick-para/`
-3. Reload Obsidian or toggle the plugin off/on
+All folder names are customizable in settings.
 
 ## Troubleshooting
 
-### Tags not updating
-- Ensure file is in a PARA folder
-- Check folder mappings in settings
-- Run "Update PARA tags for current file" manually
+**Tags not updating** — Make sure the file is inside a PARA folder. Check your folder mappings in settings and try running "Update PARA tags for current file" manually.
 
-### Agenda generation fails
-- Verify Project Dashboard path in settings
-- Check kanban board format (## sections)
-- Ensure Weekly 1-on-1 file exists
+**Templates not deploying** — Verify the TEMPLATES folder exists and check the Obsidian developer console (**Ctrl+Shift+I** / **Cmd+Option+I**) for errors.
 
-### Templates not deploying
-- Verify TEMPLATES folder exists
-- Check for file permission issues
-- Review Obsidian console for errors (Cmd+Option+I / Ctrl+Shift+I)
+**Project updates not generating** — Confirm the Kanban plugin is installed, and that the Project Dashboard path in settings points to an existing kanban board file.
+
+## Development
+
+```bash
+npm install
+npm run build    # production build
+npm run dev      # watch mode with auto-rebuild
+```
+
+### Project structure
+
+```
+src/
+├── index.js              # Main plugin entry point
+├── settings.js           # Settings tab UI
+├── tagging.js            # PARA tagging logic
+├── provisioning.js       # Setup wizard and folder creation
+├── templates.js          # Template management
+├── agenda.js             # Project update generation
+├── tasks.js              # Task cancellation
+├── dependencies.js       # Plugin dependency checking
+└── performance-profiler.js  # Diagnostic profiling
+```
 
 ## Contributing
 
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run `npm run build` to ensure it compiles
-5. Submit a pull request
+1. Fork the repository.
+2. Create a feature branch.
+3. Make your changes and run `npm run build` to verify.
+4. Submit a pull request.
 
 ## License
 
-MIT License
-
-Copyright (c) 2026 Mark Riechers
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
----
-
-**Version**: 0.1.0
-**Author**: [Mark Riechers](https://github.com/MarkOnFire)
-**Status**: Beta - Testing before community plugin submission
+[MIT](LICENSE) — Copyright (c) 2026 Mark Riechers
