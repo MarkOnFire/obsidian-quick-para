@@ -1,9 +1,9 @@
 {
   "id": "quick-para",
   "name": "Quick PARA",
-  "version": "0.6.0",
-  "minAppVersion": "0.15.0",
-  "description": "Comprehensive PARA method support: folder provisioning, auto-tagging, task cancellation for archived notes, project update generation, and template management",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Automate the PARA method with folder provisioning, auto-tagging, task cancellation for archived notes, and template management.",
   "author": "Mark Riechers",
   "authorUrl": "https://github.com/mriechers",
   "isDesktopOnly": false

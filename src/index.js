@@ -433,7 +433,7 @@ class TaggingManager {
 
         // Skip files in TEMPLATES folder - templates shouldn't get PARA properties
         if (filePath.includes('/TEMPLATES/') || filePath.startsWith('TEMPLATES/')) {
-            console.log('Quick PARA: Skipping template file:', filePath);
+            if (this.settings.diagnostics.profilingEnabled) { console.log('Quick PARA: Skipping template file:', filePath); }
             this.profiler?.increment('tagging:skip:templates');
             this.profiler?.end(timer, { ...context, reason: 'template' });
             return;
@@ -489,7 +489,7 @@ class TaggingManager {
                 // Optionally migrate old tags
                 if (this.settings.tagging.migrateOldTags) {
                     // Migration already happens above by removing para/* tags
-                    console.log('Quick PARA: Migrated old para/* tags');
+                    if (this.settings.diagnostics.profilingEnabled) { console.log('Quick PARA: Migrated old para/* tags'); }
                 }
 
                 // Build new tag list
@@ -674,7 +674,7 @@ class TaggingManager {
 
                     if (modified) {
                         cleaned++;
-                        console.log(`Quick PARA: Cleaned template file: ${file.path}`);
+                        if (this.settings.diagnostics.profilingEnabled) { console.log(`Quick PARA: Cleaned template file: ${file.path}`); }
                     }
                 });
             } catch (error) {
@@ -1535,7 +1535,7 @@ class AgendaManager {
         const match = content.match(sectionPattern);
 
         if (!match) {
-            console.warn(`Could not find Monday section for ${mondayDate}`);
+            if (this.settings.diagnostics.profilingEnabled) { console.warn(`Could not find Monday section for ${mondayDate}`); }
             return content;
         }
 
@@ -1959,7 +1959,7 @@ class TaskManager {
             errors: errors.length
         });
 
-        console.log(`Quick PARA: Archive task cancellation complete - ${filesModified} files, ${totalTasksCancelled} tasks`);
+        if (this.settings.diagnostics.profilingEnabled) { console.log(`Quick PARA: Archive task cancellation complete - ${filesModified} files, ${totalTasksCancelled} tasks`); }
     }
 
     /**
@@ -2026,12 +2026,14 @@ class TaskManager {
         if (totalTasks === 0) {
             new Notice('No open tasks found in Archive folder');
         } else {
-            console.log('Quick PARA: Archive task preview:', {
-                totalFiles: archiveFiles.length,
-                filesWithTasks: filesWithTasks.length,
-                totalOpenTasks: totalTasks,
-                files: filesWithTasks
-            });
+            if (this.settings.diagnostics.profilingEnabled) {
+                console.log('Quick PARA: Archive task preview:', {
+                    totalFiles: archiveFiles.length,
+                    filesWithTasks: filesWithTasks.length,
+                    totalOpenTasks: totalTasks,
+                    files: filesWithTasks
+                });
+            }
 
             new Notice(
                 `Preview: ${totalTasks} open tasks found in ${filesWithTasks.length} files. ` +
@@ -2076,7 +2078,7 @@ class QuickParaSettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         // Actions Section - AT THE TOP
-        containerEl.createEl('h3', { text: 'Quick Actions' });
+        new Setting(containerEl).setName('Quick Actions').setHeading();
 
         new Setting(containerEl)
             .setName('🚀 Run Setup Wizard')
@@ -2128,18 +2130,24 @@ class QuickParaSettingTab extends PluginSettingTab {
                 }));
 
         // Dependency links
-        containerEl.createEl('h4', { text: 'Required Dependencies' });
+        new Setting(containerEl).setName('Required Dependencies').setHeading();
 
         const templaterLink = containerEl.createEl('div', { cls: 'setting-item-description' });
-        templaterLink.innerHTML = '• <strong>Templater</strong>: Required for template variable substitution. <a href="obsidian://show-plugin?id=templater-obsidian">Install from Community Plugins</a>';
+        templaterLink.appendText('\u2022 ');
+        templaterLink.createEl('strong', { text: 'Templater' });
+        templaterLink.appendText(': Required for template variable substitution. ');
+        templaterLink.createEl('a', { text: 'Install from Community Plugins', href: 'obsidian://show-plugin?id=templater-obsidian' });
 
         const tasksLink = containerEl.createEl('div', { cls: 'setting-item-description' });
-        tasksLink.innerHTML = '• <strong>Tasks</strong>: Required for task management features. <a href="obsidian://show-plugin?id=obsidian-tasks-plugin">Install from Community Plugins</a>';
+        tasksLink.appendText('\u2022 ');
+        tasksLink.createEl('strong', { text: 'Tasks' });
+        tasksLink.appendText(': Required for task management features. ');
+        tasksLink.createEl('a', { text: 'Install from Community Plugins', href: 'obsidian://show-plugin?id=obsidian-tasks-plugin' });
 
         containerEl.createEl('hr');
 
         // PARA Folders Section
-        containerEl.createEl('h3', { text: 'PARA Folder Configuration' });
+        new Setting(containerEl).setName('PARA Folder Configuration').setHeading();
         containerEl.createEl('p', {
             text: 'Configure the names of your five core PARA folders. These folders will be created automatically during setup if they don\'t exist. The plugin uses these paths to determine where notes belong and what properties to assign.',
             cls: 'setting-item-description'
@@ -2239,7 +2247,7 @@ class QuickParaSettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         // Tagging Behavior Section
-        containerEl.createEl('h3', { text: 'Automatic Tagging Behavior' });
+        new Setting(containerEl).setName('Automatic Tagging Behavior').setHeading();
 
         containerEl.createEl('p', {
             text: 'Control how the plugin automatically assigns properties and tags when you create or move notes. The "para" property (locked to this name) always reflects a note\'s current PARA location, while subfolder tags provide historical context.',
@@ -2259,7 +2267,7 @@ class QuickParaSettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         // Template Management Section
-        containerEl.createEl('h3', { text: 'PARA Templates' });
+        new Setting(containerEl).setName('PARA Templates').setHeading();
 
         containerEl.createEl('p', {
             text: 'Manage the default templates that get deployed to your vault. Templates are stored in "3 - RESOURCES/TEMPLATES/" and use Templater syntax for dynamic content.',
@@ -2293,7 +2301,7 @@ class QuickParaSettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         // Diagnostics Section
-        containerEl.createEl('h3', { text: 'Diagnostics & Profiling' });
+        new Setting(containerEl).setName('Diagnostics & Profiling').setHeading();
         containerEl.createEl('p', {
             text: 'Use these options while working on Issue B (mobile optimization) to capture performance timings and event counts. Disable profiling when not actively benchmarking.',
             cls: 'setting-item-description'
@@ -2368,7 +2376,7 @@ class QuickParaSettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         // Task Management Section
-        containerEl.createEl('h3', { text: 'Task Management' });
+        new Setting(containerEl).setName('Task Management').setHeading();
         containerEl.createEl('p', {
             text: 'When notes are moved to Archive, they often contain open tasks that are no longer relevant. Use these tools to automatically cancel those tasks.',
             cls: 'setting-item-description'
@@ -2394,7 +2402,7 @@ class QuickParaSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        containerEl.createEl('h4', { text: 'Manual Task Operations' });
+        new Setting(containerEl).setName('Manual Task Operations').setHeading();
 
         new Setting(containerEl)
             .setName('🔍 Preview Archive Tasks')
@@ -2434,7 +2442,7 @@ class QuickParaSettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         // Advanced Section
-        containerEl.createEl('h3', { text: 'Advanced Settings' });
+        new Setting(containerEl).setName('Advanced Settings').setHeading();
 
         new Setting(containerEl)
             .setName('Reset to Defaults')
@@ -2464,8 +2472,6 @@ class QuickParaSettingTab extends PluginSettingTab {
 
 module.exports = class QuickParaPlugin extends Plugin {
     async onload() {
-        console.log('Loading Quick PARA plugin');
-
         // Load settings
         await this.loadSettings();
         this.initializeProfiler();
@@ -2636,7 +2642,6 @@ module.exports = class QuickParaPlugin extends Plugin {
             await this.handleFirstRun();
         }
 
-        console.log('Quick PARA plugin loaded successfully');
         this.profiler?.end(onloadTimer, { status: 'loaded' });
     }
 
@@ -2699,7 +2704,7 @@ module.exports = class QuickParaPlugin extends Plugin {
 
         // Migration: Convert old agendaGeneration settings to new projectUpdates if needed
         if (this.settings.agendaGeneration && !this.settings.projectUpdates) {
-            console.log('Migrating old agendaGeneration settings to projectUpdates');
+            if (this.settings.diagnostics?.profilingEnabled) { console.log('Migrating old agendaGeneration settings to projectUpdates'); }
             this.settings.projectUpdates = {
                 enabled: this.settings.agendaGeneration.enabled || false,
                 kanbanFile: this.settings.agendaGeneration.kanbanFile || '0 - INBOX/Project Dashboard.md',
@@ -2738,6 +2743,5 @@ module.exports = class QuickParaPlugin extends Plugin {
         if (this.settings?.diagnostics?.profilingEnabled && this.settings.diagnostics.logSummaryOnUnload) {
             this.logPerformanceSnapshot('plugin-unload');
         }
-        console.log('Unloading Quick PARA plugin');
     }
 };
